@@ -19,7 +19,12 @@ export const STEP_LABELS: Record<string, string> = {
   explain: "Объяснение",
   status: "Статус события",
   followup: "Уточнение к прошлой подборке",
+  tool: "Инструмент",
+  cancel: "Отмена действия",
   ask_age: "Вопрос о возрасте",
 };
 
 export const RELAX_LABELS: Record<string, string> = { q: "название", near: "рядом с центром", dates: "даты", category: "жанр", city: "город" };
+
+/** Кто выбрал инструмент. */
+export const BY_LABELS: Record<string, string> = { rules: "правила", model: "модель", default: "по умолчанию", confirm: "подтверждение пользователя" };

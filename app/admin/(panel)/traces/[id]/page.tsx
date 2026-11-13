@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { PageTitle, Section, Stat } from "@/components/admin/blocks";
 import { requireAdmin } from "@/lib/server/admin";
 import { db } from "@/lib/server/db";
-import { MODE_LABELS, RELAX_LABELS, SOURCE_LABELS, STEP_LABELS } from "@/lib/trace-labels";
+import { BY_LABELS, MODE_LABELS, RELAX_LABELS, SOURCE_LABELS, STEP_LABELS } from "@/lib/trace-labels";
 
 type Step = { step: string; ms?: number; ai?: boolean; [k: string]: unknown };
 type Call = { provider: string; tokens: number; ms: number; cached?: boolean; error?: string };
@@ -59,11 +59,17 @@ export default async function AdminTrace({ params }: { params: Promise<{ id: str
                 <div className="flex flex-wrap items-baseline gap-2">
                   <b>
                     {i + 1}. {STEP_LABELS[step] ?? step}
-                    {step === "relax" && typeof data.drop === "string" ? ` — без условия «${RELAX_LABELS[data.drop] ?? data.drop}»` : ""}
+                    {typeof data.name === "string" ? ` ${data.name}` : ""}
+                    {typeof data.relax === "string" ? ` — без условия «${RELAX_LABELS[data.relax] ?? data.relax}»` : ""}
                   </b>
                   {ai != null && <span className={`text-xs ${ai ? "text-emerald-700" : "text-amber-700"}`}>{ai ? "ИИ" : "без ИИ"}</span>}
                   {ms != null && <span className="text-xs text-stone-500">{ms} мс</span>}
-                  {typeof data.found === "number" && <span className="text-xs text-stone-500">найдено: {data.found}</span>}
+                  {typeof data.by === "string" && <span className="text-xs text-stone-500">выбрал: {BY_LABELS[data.by] ?? data.by}</span>}
+                  {data.ok === false && <span className="text-xs text-amber-700">ошибка</span>}
+                  {data.pending === true && <span className="text-xs text-amber-700">ждёт подтверждения</span>}
+                  {Array.isArray((data.result as { events?: unknown[] } | undefined)?.events) && (
+                    <span className="text-xs text-stone-500">событий: {(data.result as { events: unknown[] }).events.length}</span>
+                  )}
                 </div>
                 {Object.keys(data).length > 0 && (
                   <pre className="mt-2 overflow-x-auto rounded-lg bg-stone-50 p-2 text-xs">{JSON.stringify(data, null, 2)}</pre>

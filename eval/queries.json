@@ -1,5 +1,5 @@
 {
-  "about": "Контрольный набор запросов к ИИ-агенту (ТЗ, раздел 9.2 и Приложение А). Прогон: npm run eval. Ожидаемый результат скрипт считает по базе: если события под условия есть — агент должен их показать и выполнить все условия; если нет — честно сказать, что точных совпадений нет. Поля: constraints — условия (city, category, free, priceMax, age, date, afterHour, q, pushkin, access); forbid — чего не должно быть в ответе; mustInclude — что должно быть; noRepeat — без событий из прошлых реплик; cheaper — дешевле прошлой подборки. Даты — относительные: today, tomorrow, weekend, friday, saturday, sunday, week (до воскресенья), next_week, month (до конца месяца).",
+  "about": "Контрольный набор запросов к ИИ-агенту (ТЗ, раздел 9.2 и Приложение А). Прогон: npm run eval. Ожидаемый результат скрипт считает по базе: если события под условия есть — агент должен их показать и выполнить все условия; если нет — честно сказать, что точных совпадений нет. Поля: constraints — условия (city, category, free, priceMax, age, date, afterHour, q, pushkin, access); forbid — чего не должно быть в ответе; mustInclude — что должно быть; noRepeat — без событий из прошлых реплик; cheaper — дешевле прошлой подборки; tool — ожидаемый инструмент (по умолчанию search_events, у статуса — get_event); bot — диалог от пользователя бота. Даты — относительные: today, tomorrow, weekend, friday, saturday, sunday, week (до воскресенья), next_week, month (до конца месяца).",
   "cases": [
     {
       "id": "simple-ufa-weekend",
@@ -45,7 +45,11 @@
         "q": [
           "балет"
         ]
-      }
+      },
+      "tool": [
+        "search_events",
+        "get_event"
+      ]
     },
     {
       "id": "simple-concerts",
@@ -453,11 +457,13 @@
       "dialog": [
         "Сколько стоит билет на «Ревизор»?"
       ],
-      "constraints": {
-        "q": [
-          "ревизор"
-        ]
-      }
+      "tool": [
+        "search_events",
+        "get_event"
+      ],
+      "mustInclude": [
+        "600"
+      ]
     },
     {
       "id": "multi-free-lectures-teen",
@@ -870,6 +876,132 @@
         "city": "Уфа"
       },
       "cheaper": true
+    },
+    {
+      "id": "tool-venue-philharmonic",
+      "type": "tool",
+      "dialog": [
+        "Что идёт в филармонии?"
+      ],
+      "tool": "get_venue_schedule",
+      "constraints": {
+        "venue": "филармон"
+      }
+    },
+    {
+      "id": "tool-venue-puppet-weekend",
+      "type": "tool",
+      "dialog": [
+        "Расписание кукольного театра на выходные"
+      ],
+      "tool": [
+        "get_venue_schedule",
+        "search_events"
+      ],
+      "constraints": {
+        "venue": "кукол",
+        "date": "weekend"
+      }
+    },
+    {
+      "id": "tool-similar-swan-lake",
+      "type": "tool",
+      "dialog": [
+        "Что-нибудь похожее на «Лебединое озеро»"
+      ],
+      "tool": "find_similar",
+      "constraints": {
+        "category": "theatre"
+      },
+      "forbid": [
+        "лебединое озеро» —"
+      ]
+    },
+    {
+      "id": "tool-event-card",
+      "type": "tool",
+      "dialog": [
+        "Где и когда проходит «Женитьба»?"
+      ],
+      "tool": [
+        "get_event",
+        "search_events"
+      ],
+      "mustInclude": [
+        "женитьба"
+      ]
+    },
+    {
+      "id": "tool-subscribe-site",
+      "type": "tool",
+      "dialog": [
+        "Подпишите меня на новые концерты в Уфе"
+      ],
+      "tool": "subscribe",
+      "mustInclude": [
+        "бот"
+      ]
+    },
+    {
+      "id": "tool-subscribe-bot",
+      "type": "tool",
+      "bot": true,
+      "dialog": [
+        "Подпишите меня на новые концерты в Уфе",
+        "Подтвердить"
+      ],
+      "tool": "subscribe",
+      "mustInclude": [
+        "подписка оформлена"
+      ]
+    },
+    {
+      "id": "tool-subscribe-cancel",
+      "type": "tool",
+      "bot": true,
+      "dialog": [
+        "Хочу получать уведомления о новых выставках",
+        "Отмена"
+      ],
+      "mustInclude": [
+        "ничего не меняю"
+      ]
+    },
+    {
+      "id": "tool-feedback-confirm",
+      "type": "tool",
+      "dialog": [
+        "Передайте организатору, что в карточке «Ревизор» указано неверное время начала",
+        "Да"
+      ],
+      "tool": "save_feedback",
+      "mustInclude": [
+        "передано"
+      ]
+    },
+    {
+      "id": "tool-feedback-ask",
+      "type": "tool",
+      "dialog": [
+        "Сообщить об ошибке: у «Колобка» неправильная цена"
+      ],
+      "tool": "save_feedback",
+      "mustInclude": [
+        "передать",
+        "?"
+      ]
+    },
+    {
+      "id": "tool-subscribe-needs-confirm",
+      "type": "tool",
+      "bot": true,
+      "dialog": [
+        "Присылайте мне новые спектакли"
+      ],
+      "tool": "subscribe",
+      "mustInclude": [
+        "оформить подписку"
+      ]
     }
   ]
 }

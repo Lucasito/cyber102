@@ -154,7 +154,7 @@ export async function botAnswer(platform: Platform, externalId: string, rawText:
   const T = await getSettings("tuning");
   const history = [...((user.dialog as ChatMessage[] | null) ?? []), { role: "user" as const, content: text }].slice(-T.dialogMemory);
   try {
-    const result = await runAgent(history, { source: platform, userKey: `${platform}:${externalId}` });
+    const result = await runAgent(history, { source: platform, userKey: `${platform}:${externalId}`, botUserId: user.id });
     await db.botUser.update({
       where: { id: user.id },
       data: { dialog: [...history, { role: "assistant", content: result.text }].slice(-T.dialogMemory), messages: { increment: 1 } },

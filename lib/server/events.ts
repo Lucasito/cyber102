@@ -86,7 +86,9 @@ export function distanceKm(a: { lat: number; lon: number }, b: { lat: number; lo
   return 12742 * Math.asin(Math.sqrt(h));
 }
 
-const include = { venue: true, category: true, sources: { select: { source: true, url: true } } } as const;
+/** Связи события для выдачи — общие для поиска и инструментов агента. */
+export const eventInclude = { venue: true, category: true, sources: { select: { source: true, url: true } } } as const;
+const include = eventInclude;
 
 export async function searchEvents(f: FilterInput) {
   const radius = f.radius ?? (await getSettings("tuning")).radiusKm;
