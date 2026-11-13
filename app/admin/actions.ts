@@ -207,7 +207,7 @@ export async function removeDemo(): Promise<ActionState> {
 }
 
 export async function logout() {
-  await requireAdmin("MODERATOR");
+  await requireAdmin("ORGANIZER");
   await signOut();
   redirect("/admin/login");
 }
@@ -298,7 +298,7 @@ export async function resetUserPassword(id: string): Promise<ActionState> {
 }
 
 export async function changeOwnPassword(_: ActionState, f: FormData): Promise<ActionState> {
-  const me = await requireAdmin("MODERATOR");
+  const me = await requireAdmin("ORGANIZER");
   try {
     const password = text(f, "password");
     if (password.length < MIN_PASSWORD_LENGTH) throw new Error(`Пароль — не короче ${MIN_PASSWORD_LENGTH} символов.`);
@@ -352,7 +352,7 @@ export async function sendUserResetLink(id: string): Promise<ActionState> {
 }
 
 export async function saveOwnEmail(_: ActionState, f: FormData): Promise<ActionState> {
-  const me = await requireAdmin("MODERATOR");
+  const me = await requireAdmin("ORGANIZER");
   try {
     const email = await emailFrom(f, me.id);
     await db.adminUser.update({ where: { id: me.id }, data: { email } });

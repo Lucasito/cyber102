@@ -41,4 +41,4 @@ export function generatePassword(length = 16) {
 
 export const MIN_PASSWORD_LENGTH = 10;
 
-export const ROLE_LABELS = { ADMIN: "Администратор", MODERATOR: "Модератор" } as const;
+export const ROLE_LABELS = { ADMIN: "Администратор", MODERATOR: "Модератор", ORGANIZER: "Организатор" } as const;

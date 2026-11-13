@@ -121,6 +121,8 @@ export async function purgeOldData() {
 
 let started = false;
 let lastGeocode = 0;
+let lastCollect = 0;
+let collecting = false;
 export function startJobs() {
   if (started) return;
   started = true;
@@ -133,6 +135,15 @@ export function startJobs() {
     if (Date.now() - lastGeocode > 5 * MINUTE) {
       lastGeocode = Date.now();
       await geocodeVenues().catch((e) => console.error("[jobs] координаты:", e instanceof Error ? e.message : e));
+    }
+    // Сбор из внешних источников (раздел «Источники»): раз в 10 минут проверяем, кому пора; в фоне, не держа тик
+    if (!collecting && Date.now() - lastCollect > 10 * MINUTE) {
+      lastCollect = Date.now();
+      collecting = true;
+      void import("./collect")
+        .then((m) => m.collectDueSources())
+        .catch((e) => console.error("[jobs] сбор источников:", e instanceof Error ? e.message : e))
+        .finally(() => (collecting = false));
     }
   };
   setTimeout(tick, 15_000); // после старта — дать подняться ботам

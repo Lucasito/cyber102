@@ -85,6 +85,8 @@ model Event {
   orgUrl           String? // организатор (билеты — ticketUrl)
   publication      Publication   @default(PUBLISHED)
   needsReview      Boolean       @default(false) // спорная карточка — в очередь модерации
+  createdById      String? // кто добавил в админке (организатор видит свои события)
+  createdBy        AdminUser?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
   reviewNote       String? // почему спорная
   originalStartsAt DateTime? // прежняя дата, если событие перенесено
   verifiedAt       DateTime? // когда источник проверен
@@ -202,6 +204,7 @@ model QueryLog {
 enum AdminRole {
   ADMIN
   MODERATOR
+  ORGANIZER // организатор: добавляет события по одному или файлом, всё — через модерацию
 }
 
 model AdminUser {
@@ -217,6 +220,8 @@ model AdminUser {
   lastLoginAt  DateTime?
   failedLogins Int            @default(0) // неудачных попыток подряд
   lockedUntil  DateTime? // вход закрыт до этого времени (защита от подбора)
+  organization String? // организатор: учреждение или компания
+  events       Event[]
   createdAt    DateTime       @default(now())
   updatedAt    DateTime       @updatedAt
 }
@@ -351,4 +356,49 @@ model GeoCache {
   region    String? // субъект РФ: «Башкортостан»
   display   String?
   createdAt DateTime @default(now())
+}
+
+/**
+ * Внешний источник событий для сборщика (раздел «Источники» в админке, доступен модераторам).
+ * kind: universal_json / universal_rss — наш универсальный формат (/docs/format), без ИИ;
+ * rss_ai — обычная RSS-лента, карточки разбирает ИИ, всё — через модерацию;
+ * jsonld — страница с разметкой schema.org Event; custom — индивидуальный парсер (adapter).
+ */
+model Source {
+  id            String       @id @default(cuid())
+  code          String       @unique // код в EventSource.source: sgtko, bashgf …
+  name          String
+  kind          String
+  url           String
+  adapter       String? // kind = custom: ключ парсера из lib/server/collect/adapters.ts
+  city          String? // город по умолчанию, если в записи его нет
+  autoPublish   Boolean      @default(false) // прошедшие проверку — сразу в афишу (у rss_ai — всегда модерация)
+  enabled       Boolean      @default(true)
+  intervalHours Int          @default(6)
+  maxItems      Int          @default(20) // новых записей за запуск: у rss_ai ограничивает расходы на ИИ
+  note          String?
+  lastRunAt     DateTime?
+  lastStatus    String? // ok | error
+  lastMessage   String?
+  createdBy     String?
+  items         SourceItem[]
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+}
+
+/** Запись источника (элемент ленты): разобрана один раз — повторно ИИ не тратится. */
+model SourceItem {
+  id        String   @id @default(cuid())
+  sourceId  String
+  source    Source   @relation(fields: [sourceId], references: [id], onDelete: Cascade)
+  guid      String
+  link      String?
+  title     String?
+  status    String // imported | rejected | error
+  reason    String?
+  eventId   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([sourceId, guid])
 }

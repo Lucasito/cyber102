@@ -109,6 +109,18 @@ export function GET(request: Request) {
           responses: { "201": { description: "{ id, key, city, category, feedUrl, unsubscribe }" }, "400": err("Неизвестная категория", { code: "bad_request", message: "Неизвестная категория — коды в /api/v1/categories" }) },
         },
       },
+      "/api/v1/format/check": {
+        post: {
+          summary: "Проверка ленты в универсальном формате (ничего не сохраняет)",
+          description: "Тело: { url } — адрес ленты — или { content } — её текст. Формат определяется сам: JSON, RSS с полями afisha:, обычный RSS, страница со schema.org Event. Описание формата — /docs/format.",
+          requestBody: { content: { "application/json": { example: { url: "https://example.org/afisha/feed.json" } } } },
+          responses: {
+            "200": { description: "{ format: json | rss | rss_plain | jsonld | unknown, hint, items, events, ok, withIssues, rows: [{ row, ok, title, startsAt, city, venue, issues, error }] }" },
+            "400": err("Нет url или content", { code: "bad_request", message: "Нужен { url } — адрес ленты — или { content } — её текст" }),
+            "422": err("Ленту не удалось загрузить", { code: "fetch_failed", message: "Не удалось загрузить ленту: сайт ответил кодом 404" }),
+          },
+        },
+      },
       "/api/v1/plan": {
         get: {
           summary: "Планировщик «Выходной день»: 2–4 события на день",

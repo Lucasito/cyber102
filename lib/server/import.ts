@@ -242,11 +242,57 @@ async function venueFor(tx: Prisma.TransactionClient, n: Normalized) {
 
 const EVENT_FIELDS = ["title", "description", "startsAt", "endsAt", "durationMin", "status", "priceMin", "priceMax", "ageLimit", "categoryId", "venueId", "tags", "language", "orgUrl", "ticketUrl", "imageUrl", "pushkinCard"] as const;
 
+export type ImportOptions = {
+  fileName: string;
+  source: string;
+  sourceType?: SourceType;
+  userLogin: string | null;
+  /**
+   * Недоверенные данные (организатор, разбор ИИ, источник без автопубликации): новые события — только черновиком
+   * в очередь модерации с этой пометкой, уже существующие не меняются (иначе это обход модерации).
+   */
+  review?: string;
+  /** Кто добавил — организатор видит свои события. */
+  createdById?: string;
+  /** Проверить, что ссылка на источник отвечает (сборщики); не отвечает — в модерацию. */
+  verifyLinks?: boolean;
+};
+
+/** Ссылка отвечает? HEAD, при отказе — GET; код < 400 — да. */
+export async function urlAlive(url: string): Promise<{ ok: boolean; status: number }> {
+  for (const method of ["HEAD", "GET"] as const) {
+    try {
+      const res = await fetch(url, { method, redirect: "follow", signal: AbortSignal.timeout(8000), headers: { "User-Agent": "AfishaRB/1.0 (+https://afisha.193-47-33-213.sslip.io)" } });
+      if (res.status < 400) return { ok: true, status: res.status };
+      if (method === "GET" || ![403, 405, 501].includes(res.status)) return { ok: false, status: res.status };
+    } catch {
+      if (method === "GET") return { ok: false, status: 0 };
+    }
+  }
+  return { ok: false, status: 0 };
+}
+
+export type ValidatedRow = { row: number; ok: boolean; title?: string; startsAt?: string; city?: string; venue?: string; issues: string[]; error?: string };
+
+/** Проверка строк без записи в базу — для страницы универсального формата и предпросмотра источника. */
+export async function validateRows(rows: Record<string, unknown>[]): Promise<ValidatedRow[]> {
+  const categories = await db.category.findMany({ select: { slug: true } });
+  const extraSettlements = (await getSettings("tuning")).extraSettlements;
+  const ctx = { cities: [...new Set([...RB_SETTLEMENTS, ...extraSettlements])], categories: categories.map((c) => c.slug), now: new Date(), extraSettlements };
+  return rows.slice(0, MAX_ROWS).map((raw, i) => {
+    const mapped = mapRow(raw);
+    const n = normalizeRow(mapped, ctx);
+    if ("error" in n) return { row: i + 1, ok: false, title: typeof mapped.title === "string" ? mapped.title : undefined, issues: [], error: n.error };
+    const issues = [...n.issues, ...(n.checkRegion ? [`населённого пункта «${n.city}» нет в справочнике РБ — проверим по карте`] : [])];
+    return { row: i + 1, ok: true, title: n.title, startsAt: n.startsAt.toISOString(), city: n.city, venue: n.venue, issues };
+  });
+}
+
 /**
  * Импорт строк. source — код источника (например, «minkult» или имя файла), sourceType — IMPORT для файлов,
  * RSS/API/PAGE — для сборщиков. Возвращает отчёт; итог и строки отчёта сохраняются в ImportRun.
  */
-export async function importRows(rows: Record<string, unknown>[], opts: { fileName: string; source: string; sourceType?: SourceType; userLogin: string | null }): Promise<ImportReport> {
+export async function importRows(rows: Record<string, unknown>[], opts: ImportOptions): Promise<ImportReport> {
   if (rows.length > MAX_ROWS) throw new Error(`Слишком много строк: ${rows.length}, не больше ${MAX_ROWS} за раз`);
   const sourceType = opts.sourceType ?? "IMPORT";
   const source = opts.source.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").slice(0, 60) || "import";
@@ -260,6 +306,7 @@ export async function importRows(rows: Record<string, unknown>[], opts: { fileNa
   const report: RowResult[] = [];
   const seenInFile = new Map<string, number>();
   const regionCache = new Map<string, boolean | null>();
+  const linkCache = new Map<string, { ok: boolean; status: number }>();
 
   for (const [i, raw] of rows.entries()) {
     const rowNo = i + 2; // как в таблице: строка 1 — заголовок
@@ -281,6 +328,13 @@ export async function importRows(rows: Record<string, unknown>[], opts: { fileNa
         if (inRb === false) Object.assign(n, { error: `вне Башкортостана: «${n.city}»` });
         else if (inRb === null) n.issues.push(`регион «${n.city}» не проверен — геокодер недоступен`);
       }
+      // Проверка сборщика: ссылка на источник отвечает
+      if (!("error" in n) && opts.verifyLinks) {
+        const alive = linkCache.get(n.sourceUrl) ?? (await urlAlive(n.sourceUrl));
+        linkCache.set(n.sourceUrl, alive);
+        if (!alive.ok) n.issues.push(`ссылка на источник не отвечает${alive.status ? ` (код ${alive.status})` : ""}`);
+      }
+      if (!("error" in n) && opts.review) n.issues.unshift(opts.review);
       if ("error" in n) {
         await db.rawRecord.upsert({
           where: { source_hash: { source, hash } },
@@ -326,9 +380,15 @@ export async function importRows(rows: Record<string, unknown>[], opts: { fileNa
 
         let eventId: string;
         let outcome: RowResult["result"];
+        if (existing && opts.review) {
+          // Недоверенные данные не меняют то, что уже есть в афише, и не добавляют к нему ссылок
+          return { eventId: existing.id, outcome: "unchanged" as const, skipped: true };
+        }
         if (!existing) {
           const publication: Publication = n.draft || n.issues.length ? "DRAFT" : "PUBLISHED";
-          const created = await tx.event.create({ data: { ...data, dedupKey: key, publication, verifiedAt: new Date(), confidence: n.issues.length ? 0.7 : 1, ...review } });
+          const created = await tx.event.create({
+            data: { ...data, dedupKey: key, publication, verifiedAt: new Date(), confidence: opts.review ? 0.5 : n.issues.length ? 0.7 : 1, createdById: opts.createdById ?? null, ...review },
+          });
           eventId = created.id;
           outcome = "created";
           await audit({ userLogin: opts.userLogin, action: "import", entity: "event", entityId: eventId, summary: `Импорт «${opts.fileName}», строка ${rowNo}: создано «${n.title}»${n.issues.length ? ` — в модерацию: ${n.issues.join("; ")}` : ""}` }, tx);
@@ -353,7 +413,7 @@ export async function importRows(rows: Record<string, unknown>[], opts: { fileNa
           create: { source, sourceType, hash, payload: raw as Prisma.InputJsonValue, importId: run.id, eventId },
           update: { importId: run.id, eventId, error: null },
         });
-        return { eventId, outcome };
+        return { eventId, outcome, skipped: false };
       });
 
       const dup = seenInFile.get(key);
@@ -363,7 +423,15 @@ export async function importRows(rows: Record<string, unknown>[], opts: { fileNa
         result: result.outcome,
         eventId: result.eventId,
         title: n.title,
-        reason: dup ? `то же событие, что в строке ${dup} — объединено` : result.outcome === "unchanged" ? "такое событие уже есть, данные совпадают" : n.issues.length ? `в модерацию: ${n.issues.join("; ")}` : undefined,
+        reason: result.skipped
+          ? "такое событие уже есть в афише — изменения вносит модератор"
+          : dup
+            ? `то же событие, что в строке ${dup} — объединено`
+            : result.outcome === "unchanged"
+              ? "такое событие уже есть, данные совпадают"
+              : n.issues.length
+                ? `в модерацию: ${n.issues.join("; ")}`
+                : undefined,
       });
     } catch (e) {
       report.push({ row: rowNo, result: "rejected", reason: `ошибка обработки: ${e instanceof Error ? e.message.slice(0, 200) : String(e)}` });

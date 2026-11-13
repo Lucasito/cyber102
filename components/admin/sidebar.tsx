@@ -1,13 +1,13 @@
 "use client";
 
-import { BarChart3, Bot, Brain, CalendarDays, Database, FileUp, Globe, History, LayoutDashboard, ListTree, LogOut, Mail, Map, Menu, MessageSquare, ShieldCheck, SlidersHorizontal, UserCog, Users, X } from "lucide-react";
+import { BarChart3, Bot, Brain, CalendarDays, Database, FileUp, Globe, History, LayoutDashboard, ListTree, LogOut, Rss, Mail, Map, Menu, MessageSquare, ShieldCheck, SlidersHorizontal, UserCog, Users, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
 
 // Меню админки: слева на компьютере, выезжающее — на телефоне. Пункты фильтруются по роли.
 
-type Role = "ADMIN" | "MODERATOR";
+type Role = "ADMIN" | "MODERATOR" | "ORGANIZER";
 type Item = {
   href: string;
   label: string;
@@ -23,6 +23,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
       { href: "/admin/events", label: "События", icon: CalendarDays, roles: ["ADMIN", "MODERATOR"] },
       { href: "/admin/moderation", label: "Модерация", icon: ShieldCheck, roles: ["ADMIN", "MODERATOR"] },
       { href: "/admin/import", label: "Импорт", icon: FileUp, roles: ["ADMIN", "MODERATOR"] },
+      { href: "/admin/sources", label: "Источники", icon: Rss, roles: ["ADMIN", "MODERATOR"] },
       { href: "/admin/feedback", label: "Обращения", icon: MessageSquare, roles: ["ADMIN", "MODERATOR"] },
       { href: "/admin/audit", label: "Журнал", icon: History, roles: ["ADMIN", "MODERATOR"] },
       {

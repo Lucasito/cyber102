@@ -7,7 +7,7 @@ import { MIN_PASSWORD_LENGTH, ROLE_LABELS } from "@/lib/server/password";
 import { changeOwnPassword, saveOwnEmail } from "../../actions";
 
 export default async function AdminProfile() {
-  const me = await requireAdmin("MODERATOR");
+  const me = await requireAdmin("ORGANIZER");
   const [user, mail] = await Promise.all([db.adminUser.findUniqueOrThrow({ where: { id: me.id }, select: { email: true } }), mailReady()]);
   return (
     <>

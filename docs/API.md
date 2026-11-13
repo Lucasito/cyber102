@@ -116,6 +116,22 @@ curl -X POST .../api/v1/subscriptions -H "Content-Type: application/json" -d '{"
 
 В ботах подписка оформляется кнопкой «🔔 Подписаться» ([BOTS.md](BOTS.md)).
 
+## Универсальный формат ленты и её проверка
+
+Учреждения публикуют события лентой — JSON или RSS 2.0 с полями `afisha:` (пространство имён `urn:afisha-rb:1`).
+Описание полей, примеры и проверка в браузере — страница [/docs/format](/docs/format); образцы —
+`/docs/format/sample.json` и `/docs/format/sample.xml`. Поля совпадают с импортом файлов в админке.
+
+```bash
+curl -X POST .../api/v1/format/check -H "Content-Type: application/json" -d '{"url":"https://example.org/afisha/feed.json"}'
+# 200 { "format": "json", "hint": "…", "items": 12, "events": 12, "ok": 11, "withIssues": 2,
+#       "rows": [{ "row": 1, "ok": true, "title": "…", "startsAt": "…", "city": "Уфа", "venue": "…", "issues": [] }, …] }
+```
+
+Вместо `url` можно передать текст ленты: `{ "content": "…" }`. Формат определяется сам: `json`, `rss` (с полями
+`afisha:`), `rss_plain` (обычный RSS — подключается только с разбором ИИ), `jsonld` (страница со schema.org Event),
+`unknown`. Ничего не сохраняется. Лента не загрузилась — `422 fetch_failed`. Лимит — как у умного поиска.
+
 ## Планировщик «Выходной день»
 
 `GET /api/v1/plan` — 2–4 события на один день: по времени, без пересечений, с оценкой переездов и общей стоимостью.

@@ -16,6 +16,8 @@
     "ai:check": "tsx --conditions=react-server scripts/ai-check.mts",
     "eval": "tsx --conditions=react-server scripts/eval.mts",
     "seed:demo": "tsx scripts/seed-demo.mts",
+    "sources:seed": "tsx scripts/seed-sources.mts",
+    "sources:preview": "tsx --conditions=react-server scripts/sources-preview.mts",
     "logo:export": "node scripts/export-logo.mjs",
     "postinstall": "prisma generate"
   },

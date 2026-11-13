@@ -12,7 +12,7 @@ import { DUMMY_HASH, verifyPassword } from "./password";
 
 export const ADMIN_COOKIE = "afisha_adm";
 export const ADMIN_MAX_AGE = 30 * 24 * 3600;
-const RANK: Record<AdminRole, number> = { MODERATOR: 1, ADMIN: 2 };
+const RANK: Record<AdminRole, number> = { ORGANIZER: 0, MODERATOR: 1, ADMIN: 2 };
 
 export type AdminUserInfo = { id: string; login: string; name: string | null; role: AdminRole };
 

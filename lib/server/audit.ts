@@ -7,7 +7,7 @@ import { db } from "./db";
 export type AuditEntry = {
   userLogin: string | null;
   action: string;
-  entity: "event" | "import" | "user" | "settings" | "feedback";
+  entity: "event" | "import" | "user" | "settings" | "feedback" | "source";
   entityId?: string | null;
   summary: string;
   diff?: Record<string, [unknown, unknown]> | null;

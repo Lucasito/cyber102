@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 import { PageTitle, Section, Stat } from "@/components/admin/blocks";
 import { DEMO_SOURCE } from "@/lib/demo-data";
 import { aiProviderName } from "@/lib/server/ai";
@@ -9,7 +10,9 @@ import { getSettings } from "@/lib/server/settings";
 
 /** Обзор: главные цифры и что требует внимания. Подробности — в разделах меню. */
 export default async function AdminOverview() {
-  const me = await requireAdmin("MODERATOR");
+  const me = await requireAdmin("ORGANIZER");
+  // Организатору — сразу его события
+  if (me.role === "ORGANIZER") redirect("/admin/my");
   const now = new Date();
   const [total, upcoming, demo, cancelled, users, review, feedback] = await Promise.all([
     db.event.count(),
