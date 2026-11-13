@@ -11,12 +11,15 @@ export function EventCard({
   tile = false,
   row: compact = false,
   lang = "ru",
+  accent = false,
 }: {
   event: CardEvent;
   target?: string;
   tile?: boolean;
   row?: boolean;
   lang?: Lang;
+  /** Виджет: цвет --brand заметен — полоса у карточки, дата и цена */
+  accent?: boolean;
 }) {
   // Идёт прямо сейчас. Многодневное (выставка) — показываем дату окончания «до 11 дек»; короткое — свою дату
   const now = new Date();
@@ -29,11 +32,13 @@ export function EventCard({
   const style = CATEGORY_STYLE[e.category?.slug ?? ""] ?? DEFAULT_STYLE;
   // tile — всегда плитка (виджет); row — всегда строка (чат); иначе строка на телефоне и плитка с sm
   const row = tile ? "" : compact ? "flex-row items-stretch" : "max-sm:flex-row max-sm:items-stretch";
+  const stripe = accent ? (tile ? "border-t-4 border-[var(--brand)]" : "border-l-4 border-[var(--brand)]") : "";
+  const accentText = accent ? "text-[var(--brand)]" : "text-stone-900";
   return (
     <a
       href={`/events/${e.id}`}
       target={target}
-      className={`group flex flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-black/5 transition hover:shadow-lg hover:shadow-black/5 sm:hover:-translate-y-0.5 ${row} ${inactive ? "opacity-55" : ""}`}
+      className={`group flex flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-black/5 transition hover:shadow-lg hover:shadow-black/5 sm:hover:-translate-y-0.5 ${row} ${stripe} ${inactive ? "opacity-55" : ""}`}
     >
       <div className={`relative shrink-0 overflow-hidden ${style} ${tile ? "aspect-[16/9]" : compact ? "w-24" : "aspect-[16/9] max-sm:aspect-auto max-sm:w-24"}`}>
         {e.imageUrl ? (
@@ -47,7 +52,7 @@ export function EventCard({
           className={`absolute flex flex-col items-center rounded-xl bg-white/95 px-2.5 py-1.5 leading-none text-stone-900 shadow-sm ${tile ? "top-3 left-3" : compact ? "top-2.5 left-1/2 -translate-x-1/2 px-2 py-1" : "top-3 left-3 max-sm:top-2.5 max-sm:left-1/2 max-sm:-translate-x-1/2 max-sm:px-2 max-sm:py-1"}`}
         >
           {ongoing && lang === "ru" && <span className="mb-0.5 text-[10px] text-stone-500">{tr(lang, "until")}</span>}
-          <span className="text-lg font-semibold tabular-nums">{shown.day}</span>
+          <span className={`text-lg font-semibold tabular-nums ${accent ? "text-[var(--brand)]" : ""}`}>{shown.day}</span>
           <span className="mt-0.5 text-[11px] text-stone-500 uppercase">{shown.month}</span>
           {ongoing && lang === "ba" && <span className="mt-0.5 text-[10px] text-stone-500">{tr(lang, "until")}</span>}
         </div>
@@ -65,7 +70,7 @@ export function EventCard({
             {e.distanceKm != null && <span className="font-medium text-[var(--brand)]"> · {formatDistance(e.distanceKm)}</span>}
           </p>
         )}
-        <p className="mt-auto flex items-center gap-2 pt-1.5 text-sm font-medium text-stone-900">
+        <p className={`mt-auto flex items-center gap-2 pt-1.5 text-sm font-semibold ${accentText}`}>
           {formatPriceL(e, lang)}
           {status && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">{status}</span>}
         </p>

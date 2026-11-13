@@ -32,14 +32,21 @@ export async function analyticsSummary(days = 7) {
   const since = new Date(Date.now() - days * 86_400_000);
   const rows = await db.queryLog.findMany({ where: { createdAt: { gte: since } }, orderBy: { createdAt: "desc" }, take: 5000 });
 
+  // График — с первого дня, когда есть записи (не раньше начала периода): без пустых дней до запуска сервиса
+  const first = await db.queryLog.findFirst({ orderBy: { createdAt: "asc" }, select: { createdAt: true } });
+  const localDay = (d: Date) => d.toLocaleDateString("sv-SE", { timeZone: "Asia/Yekaterinburg" });
+  const startDay = first && first.createdAt > since ? localDay(first.createdAt) : localDay(since);
   const byDay = new Map<string, number>();
-  for (let i = days - 1; i >= 0; i--) byDay.set(new Date(Date.now() - i * 86_400_000).toLocaleDateString("sv-SE", { timeZone: "Asia/Yekaterinburg" }), 0);
+  for (let i = days - 1; i >= 0; i--) {
+    const day = localDay(new Date(Date.now() - i * 86_400_000));
+    if (day >= startDay || i === 0) byDay.set(day, 0);
+  }
   const bySource: Record<string, number> = {};
   const top = new Map<string, { text: string; count: number }>();
   const missed = new Map<string, { text: string; count: number; results: number }>();
 
   for (const r of rows) {
-    const day = r.createdAt.toLocaleDateString("sv-SE", { timeZone: "Asia/Yekaterinburg" });
+    const day = localDay(r.createdAt);
     if (byDay.has(day)) byDay.set(day, byDay.get(day)! + 1);
     bySource[r.source] = (bySource[r.source] ?? 0) + 1;
     const key = norm(r.text);

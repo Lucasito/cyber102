@@ -3,9 +3,9 @@
 // а Cloudflare доступен. Сервер опрашивает Telegram через этот воркер.
 //
 // Установка (бесплатный тариф Cloudflare, ~5 минут):
-//   1. dash.cloudflare.com → Workers & Pages → Create → Create Worker → имя, например afish-tg → Deploy.
+//   1. dash.cloudflare.com → Workers & Pages → Create → Create Worker → имя, например afisha-tg → Deploy.
 //   2. Edit code → вставить этот файл целиком → Deploy.
-//   3. Адрес воркера (https://afish-tg.<ваш-аккаунт>.workers.dev) → админка → «Бот Telegram»:
+//   3. Адрес воркера (https://afisha-tg.<ваш-аккаунт>.workers.dev) → админка → «Бот Telegram»:
 //      «Адрес API Telegram» = этот адрес, «Режим» = «Опрос», Сохранить, «Проверить бота».
 //
 // Пропускает только запросы нашего бота (по id из токена) — открытым прокси воркер не станет.

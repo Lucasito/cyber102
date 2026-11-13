@@ -1,7 +1,7 @@
 # REST API и виджет
 
 Афиша открыта для сайтов и приложений: API без ключа, CORS разрешён для всех источников.
-Базовый адрес: `https://afish.193-47-33-213.sslip.io`. Машиночитаемая спецификация — `GET /api/v1/openapi`
+Базовый адрес: `https://afisha.193-47-33-213.sslip.io`. Машиночитаемая спецификация — `GET /api/v1/openapi`
 (OpenAPI 3.1). Страница для людей — `/docs`.
 
 ## Поиск событий
@@ -29,7 +29,7 @@
 Период ищется по пересечению: выставка, идущая месяц, попадает в выдачу на любой день внутри срока.
 
 ```bash
-curl "https://afish.193-47-33-213.sslip.io/api/v1/events?city=Уфа&dateFrom=2026-11-14&dateTo=2026-11-15&age=6&priceMax=1000"
+curl "https://afisha.193-47-33-213.sslip.io/api/v1/events?city=Уфа&dateFrom=2026-11-14&dateTo=2026-11-15&age=6&priceMax=1000"
 ```
 
 Ответ:
@@ -94,18 +94,24 @@ curl "https://afish.193-47-33-213.sslip.io/api/v1/events?city=Уфа&dateFrom=20
 
 ## Виджет
 
-Вставьте в любое место страницы:
+Код с нужными настройками удобнее всего собрать в **конструкторе** — https://afisha.193-47-33-213.sslip.io/docs/widget
+(живой предпросмотр, копирование кода). Или вставьте в любое место страницы:
 
 ```html
 <div data-afisha-widget data-city="Уфа" data-limit="6"></div>
-<script src="https://afish.193-47-33-213.sslip.io/widget.js" async></script>
+<script src="https://afisha.193-47-33-213.sslip.io/widget.js" async></script>
 ```
 
 | Атрибут | Описание |
 |---|---|
-| `data-city`, `data-category`, `data-age`, `data-price-max`, `data-free` | Фильтры, как в API |
+| `data-city`, `data-category`, `data-q`, `data-age`, `data-price-max`, `data-free`, `data-pushkin`, `data-sort` | Фильтры, как в API |
+| `data-period` | `today`, `tomorrow`, `weekend`, `week` (7 дней), `month` (30 дней) — считается в момент показа |
 | `data-limit` | Сколько событий показать (по умолчанию 6) |
-| `data-height` | Высота фрейма, px (по умолчанию 480) |
+| `data-layout` | `grid` — плитки (по умолчанию), `list` — список |
+| `data-title` | Заголовок над событиями |
+| `data-accent` | Цвет акцентов без `#`, например `c2185b` |
+| `data-link` | `0` — без ссылки «Вся афиша» внизу |
+| `data-height` | `auto` (по умолчанию) — по содержимому, без прокрутки; число — фиксированная высота, px |
 
 Виджет работает во фрейме (`/widget?…`): стили и скрипты сайта не затрагиваются, сайт министерства менять
 не нужно. Карточки открывают событие на сайте афиши в новой вкладке. Встраивание во фрейм разрешено только для

@@ -146,3 +146,57 @@ model QueryLog {
 
   @@index([createdAt])
 }
+
+/**
+ * Пользователи админки. Роль ADMIN — всё, включая настройки и пользователей; MODERATOR — работа с событиями.
+ * Пароль хранится как scrypt-хеш (lib/server/password.ts).
+ */
+enum AdminRole {
+  ADMIN
+  MODERATOR
+}
+
+model AdminUser {
+  id           String         @id @default(cuid())
+  login        String         @unique
+  email        String?        @unique // для восстановления пароля и приглашений
+  name         String?
+  passwordHash String
+  role         AdminRole      @default(MODERATOR)
+  active       Boolean        @default(true)
+  sessions     AdminSession[]
+  tokens       AdminToken[]
+  lastLoginAt  DateTime?
+  failedLogins Int            @default(0) // неудачных попыток подряд
+  lockedUntil  DateTime? // вход закрыт до этого времени (защита от подбора)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+}
+
+/**
+ * Сессия входа: в cookie — случайный токен, в базе — только его SHA-256.
+ */
+model AdminSession {
+  id        String    @id // sha256(токен)
+  userId    String
+  user      AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}
+
+/**
+ * Одноразовая ссылка из письма: сброс пароля или приглашение. В базе — только SHA-256 токена.
+ */
+model AdminToken {
+  id        String    @id // sha256(токен)
+  userId    String
+  user      AdminUser @relation(fields: [userId], references: [id], onDelete: Cascade)
+  kind      String // reset | invite
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId])
+}

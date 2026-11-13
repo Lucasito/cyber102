@@ -1,22 +1,38 @@
-/* Виджет афиши культуры РБ. Подключение на любом сайте:
- *   <div data-afisha-widget data-city="Уфа" data-limit="5"></div>
+/* Виджет афиши культуры Башкортостана. Код с нужными настройками собирает конструктор: <домен-афиши>/docs/widget
+ *   <div data-afisha-widget data-city="Уфа" data-period="weekend" data-limit="6"></div>
  *   <script src="https://<домен-афиши>/widget.js" async></script>
- * Работает через iframe — не вмешивается в стили и скрипты сайта. */
+ * Все атрибуты data-* (кроме data-height) передаются виджету как параметры: data-price-max → priceMax и т. д.
+ * data-height: число пикселей или "auto" (по умолчанию) — высота подстраивается под содержимое.
+ * Работает через iframe — не вмешивается в стили и скрипты сайта, cookies не использует. */
 (function () {
   var src = document.currentScript && document.currentScript.src;
   var origin = src ? new URL(src).origin : "";
-  var attrs = { city: "city", category: "category", limit: "limit", age: "age", priceMax: "price-max", free: "free" };
-  document.querySelectorAll("[data-afisha-widget]").forEach(function (el) {
+  var frames = {};
+
+  window.addEventListener("message", function (e) {
+    if (e.origin !== origin || !e.data || e.data.type !== "afisha-widget-height") return;
+    var f = frames[e.data.wid];
+    if (f) f.style.height = Math.ceil(e.data.height) + "px";
+  });
+
+  document.querySelectorAll("[data-afisha-widget]").forEach(function (el, i) {
+    if (el.getAttribute("data-afisha-ready")) return;
+    el.setAttribute("data-afisha-ready", "1");
     var params = new URLSearchParams();
-    Object.keys(attrs).forEach(function (k) {
-      var v = el.getAttribute("data-" + attrs[k]);
-      if (v) params.set(k, v);
+    Object.keys(el.dataset).forEach(function (k) {
+      if (k === "afishaWidget" || k === "afishaReady" || k === "height") return;
+      if (el.dataset[k] !== "") params.set(k, el.dataset[k]);
     });
+    var height = el.getAttribute("data-height") || "auto";
+    var auto = height === "auto";
+    var wid = "w" + i + "-" + Math.random().toString(36).slice(2, 8);
+    if (auto) params.set("wid", wid);
     var f = document.createElement("iframe");
     f.src = origin + "/widget?" + params.toString();
     f.title = "Афиша культуры Башкортостана";
     f.loading = "lazy";
-    f.style.cssText = "width:100%;border:0;min-height:" + (el.getAttribute("data-height") || "480") + "px";
+    f.style.cssText = "width:100%;border:0;display:block;height:" + (auto ? "480" : parseInt(height, 10) || 480) + "px";
+    if (auto) frames[wid] = f;
     el.appendChild(f);
   });
 })();

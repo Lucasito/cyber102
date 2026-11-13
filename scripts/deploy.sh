@@ -6,11 +6,12 @@
 # .env на сервере создаётся один раз из локального .env (ИИ и MAX) + случайный пароль БД;
 # дальше правится на сервере: /opt/afisha/.env, затем снова этот скрипт.
 set -euo pipefail
+START=$(date +%s)
 
 HOST="${DEPLOY_HOST:-193.47.33.213}"
 USER_="${DEPLOY_USER:-root}"
 DIR=/opt/afisha
-PUBLIC_URL="${PUBLIC_URL:-https://afish.193-47-33-213.sslip.io}"
+PUBLIC_URL="${PUBLIC_URL:-https://afisha.193-47-33-213.sslip.io}"
 HOSTKEY="SHA256:vTP34yqfDkIDvvXLxmGs7oPIqS/In19l1sFWSVmoQoE"
 
 if ssh -o BatchMode=yes -o ConnectTimeout=5 "$USER_@$HOST" true 2>/dev/null; then
@@ -45,4 +46,4 @@ run "cd $DIR && docker compose -f docker-compose.prod.yml up -d --remove-orphans
 
 echo "→ Проверка"
 run "for i in \$(seq 1 30); do docker exec afisha-app node -e \"fetch('http://localhost:3000/api/health').then(r=>r.text()).then(t=>{console.log(t);process.exit(0)}).catch(()=>process.exit(1))\" 2>/dev/null && exit 0; sleep 2; done; docker logs --tail 30 afisha-app; exit 1"
-echo "Готово: $PUBLIC_URL"
+echo "Готово за $(( $(date +%s) - START )) с: $PUBLIC_URL"

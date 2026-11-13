@@ -81,6 +81,20 @@ export const settingsSchema = {
     token: str,
     greeting: str,
   }),
+  // Почта для пользователей админки (восстановление пароля, приглашения). Исходящие 25/465/587 на сервере
+  // закрыты хостингом — письма идут через посредника (Cloudflare Worker) или SMTP на порту 2525.
+  mail: z.object({
+    enabled: z.boolean().default(false),
+    host: str,
+    port: num(1, 65535, 2525),
+    secure: z.boolean().default(false), // true — TLS сразу (порт 465); false — STARTTLS
+    user: str,
+    password: str,
+    from: str, // адрес отправителя, подтверждённый у почтового сервиса
+    fromName: str,
+    relayUrl: str, // посредник Cloudflare Worker (docs/mail-relay-worker.js): SMTP с сервера закрыт хостингом
+    relaySecret: str,
+  }),
   telegram: z.object({
     enabled: z.boolean().default(false),
     token: str,

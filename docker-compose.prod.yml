@@ -1,5 +1,5 @@
 # Продакшн на общем сервере с РемЗап (/opt/remzap). Порты наружу не открываются:
-# HTTPS отдаёт Caddy РемЗапа — блок afish.* в /opt/remzap/docker/Caddyfile
+# HTTPS отдаёт Caddy РемЗапа — блок afisha.* в /opt/remzap/docker/Caddyfile
 # проксирует на afisha-app:3000 через общую сеть remzap_default.
 # Запуск: docker compose -f docker-compose.prod.yml up -d --build  (из /opt/afisha)
 

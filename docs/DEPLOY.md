@@ -6,7 +6,7 @@
 |---|---|
 | Адрес | `193.47.33.213`, Ubuntu 24.04, 2 ядра, 1,8 ГБ RAM + 5,7 ГБ swap, ~5 ГБ свободно на диске |
 | Доступ | `root`, пароль — в локальном файле `psw` (в git не попадает) |
-| Сайт | https://afish.193-47-33-213.sslip.io |
+| Сайт | https://afisha.193-47-33-213.sslip.io |
 | Папка | `/opt/afisha` |
 
 **На сервере работает продакшн РемЗап** (`/opt/remzap`, проект crm_spare_parts, домен
@@ -21,14 +21,16 @@
 ```
 Интернет ─► remzap-caddy-1 (80/443, Let's Encrypt)
               ├─ 193-47-33-213.sslip.io        ─► remzap-app-1
-              └─ afish.193-47-33-213.sslip.io  ─► afisha-app:3000  (сеть remzap_default)
+              └─ afisha.193-47-33-213.sslip.io ─► afisha-app:3000  (сеть remzap_default)
 afisha-app ─► afisha-db-1 (PostgreSQL 16, том afisha_db-data)
 ```
 
 - `docker-compose.prod.yml` — проект `afisha`: `db` (лимит 256 МБ) и `app` (512 МБ, контейнер `afisha-app`,
   подключён к сети `remzap_default`). Порты наружу не публикуются.
-- HTTPS — Caddy РемЗапа: блок из `docker/Caddyfile.afish` добавлен в `/opt/remzap/docker/Caddyfile` и в
+- HTTPS — Caddy РемЗапа: блок из `docker/Caddyfile.afisha` добавлен в `/opt/remzap/docker/Caddyfile` и в
   репозиторий crm_spare_parts (`docker/Caddyfile`), чтобы деплой РемЗапа его не затёр.
+- Старый адрес `afish.193-47-33-213.sslip.io` переадресуется (301) на основной — там же, в `Caddyfile.afisha`.
+  При смене адреса меняется и `PUBLIC_URL` в `/opt/afisha/.env` (ссылки в ботах, sitemap, OpenAPI).
 - `sslip.io` сам резолвит любой поддомен `*.193-47-33-213.sslip.io` в этот IP — DNS-записи не нужны.
 - При старте контейнера применяются миграции (`docker/entrypoint.sh`).
 
@@ -42,11 +44,13 @@ bash scripts/deploy.sh      # из корня проекта, Git Bash
 
 1. Упаковывает исходники (без `node_modules`, `.next`, `.env`, `psw`) и раскладывает их в **чистую** папку
    `/opt/afisha` — удалённые файлы на сервере не остаются. `.env` сервера сохраняется.
-2. Собирает образ на сервере (`docker compose build app`). **Ошибка сборки останавливает деплой** — иначе
+2. Собирает образ на сервере (`docker compose build afisha`). **Ошибка сборки останавливает деплой** — иначе
    продолжил бы работать старый контейнер.
 3. Перезапускает приложение и ждёт `/api/health`.
 
-Доступ — SSH-ключ, если настроен, иначе `plink` (PuTTY) с паролем из `psw`. Сборка идёт около 3–5 минут.
+Доступ — SSH-ключ, если настроен, иначе `plink` (PuTTY) с паролем из `psw`. Деплой с изменением кода — около минуты: зависимости (`node_modules`, ~1 ГБ) лежат отдельным слоем образа и
+берутся из кэша, пока не менялся `package-lock.json` (тогда — 3–4 минуты). Кэш сборки Next.js — в кэше BuildKit, не
+в образе.
 
 ## Переменные окружения (`/opt/afisha/.env`)
 
@@ -54,7 +58,6 @@ bash scripts/deploy.sh      # из корня проекта, Git Bash
 |---|---|
 | `PUBLIC_URL` | Публичный адрес (ссылки в ботах, API, виджете) |
 | `POSTGRES_PASSWORD` | Пароль БД (создан при первом деплое) |
-| `ADMIN_KEY` | Ключ входа в админку, ≥16 символов |
 | `MAX_MODE` | `polling` (по умолчанию) или `webhook` |
 | `MAX_WEBHOOK_SECRET` | Только для webhook MAX |
 

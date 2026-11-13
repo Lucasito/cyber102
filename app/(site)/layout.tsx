@@ -90,7 +90,15 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
             <Link href="/docs" className="hover:text-stone-900">
               {tr(lang, "forDevs")}
             </Link>
+            <Link href="/docs/widget" className="hover:text-stone-900">
+              {tr(lang, "widgetBuilder")}
+            </Link>
           </div>
+        </div>
+        <div className="mx-auto max-w-6xl px-4 pb-6 text-xs">
+          <Link href="/admin/login" rel="nofollow" className="text-stone-400 hover:text-stone-700">
+            {tr(lang, "adminLogin")}
+          </Link>
         </div>
       </footer>
     </div>

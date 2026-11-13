@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Link from "next/link";
 
 export const dynamic = "force-dynamic";
 export const metadata: Metadata = { title: "API и виджет" };
@@ -18,12 +19,21 @@ export default function Docs() {
 
       <section className="mt-10 space-y-3">
         <h2 className="text-xl font-semibold">Виджет</h2>
-        <p className="text-stone-600">Вставьте код в нужное место страницы. Виджет работает во фрейме — стили и скрипты сайта не меняются.</p>
+        <p className="text-stone-600">
+          Вставьте код в нужное место страницы. Виджет работает во фрейме — стили и скрипты сайта не меняются. Город, период, вид, цвет и другие настройки удобно
+          выбрать в{" "}
+          <Link href="/docs/widget" className="font-medium text-[var(--brand)] underline-offset-2 hover:underline">
+            конструкторе виджета
+          </Link>{" "}
+          — он сразу покажет результат и готовый код.
+        </p>
         <Code>{`<div data-afisha-widget data-city="Уфа" data-limit="6"></div>
 <script src="${base}/widget.js" async></script>`}</Code>
         <p className="text-sm text-stone-500">
-          Атрибуты: <code>data-city</code>, <code>data-category</code>, <code>data-age</code>, <code>data-price-max</code>, <code>data-free</code>,{" "}
-          <code>data-limit</code>, <code>data-height</code>.
+          Атрибуты: <code>data-city</code>, <code>data-category</code>, <code>data-q</code>, <code>data-period</code> (today, tomorrow, weekend, week, month),{" "}
+          <code>data-age</code>, <code>data-price-max</code>, <code>data-free</code>, <code>data-pushkin</code>, <code>data-sort</code>, <code>data-limit</code>,{" "}
+          <code>data-layout</code> (grid, list), <code>data-title</code>, <code>data-accent</code> (цвет без #), <code>data-link=&quot;0&quot;</code>,{" "}
+          <code>data-height</code> (число или auto).
         </p>
       </section>
 
