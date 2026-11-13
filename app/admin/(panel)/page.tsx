@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { PageTitle, Section, Stat } from "@/components/admin/blocks";
-import { DEMO_SOURCE } from "@/lib/demo-data";
 import { aiProviderName } from "@/lib/server/ai";
 import { requireAdmin } from "@/lib/server/admin";
 import { analyticsSummary } from "@/lib/server/analytics";
@@ -14,10 +13,10 @@ export default async function AdminOverview() {
   // Организатору — сразу его события
   if (me.role === "ORGANIZER") redirect("/admin/my");
   const now = new Date();
-  const [total, upcoming, demo, cancelled, users, review, feedback] = await Promise.all([
+  const [total, upcoming, sources, cancelled, users, review, feedback] = await Promise.all([
     db.event.count(),
     db.event.count({ where: { status: { notIn: ["PAST", "CANCELLED"] }, OR: [{ startsAt: { gte: now } }, { endsAt: { gte: now } }] } }),
-    db.event.count({ where: { sources: { some: { source: DEMO_SOURCE } } } }),
+    db.source.count({ where: { enabled: true } }),
     db.event.count({ where: { status: "CANCELLED", startsAt: { gte: now } } }),
     db.botUser.groupBy({ by: ["platform"], _count: true }),
     db.event.count({ where: { needsReview: true, status: { not: "PAST" } } }),
@@ -34,10 +33,10 @@ export default async function AdminOverview() {
   const todo: { text: string; href: string }[] = [];
   if (feedback) todo.push({ text: `${feedback} новых обращений: заявки организаторов, уточнения, вопросы`, href: "/admin/feedback" });
   if (review) todo.push({ text: `${review} спорных карточек ждут модерации — на сайте их не видно`, href: "/admin/moderation" });
+  if (!sources) todo.push({ text: "Ни один источник не включён — новые события сами не появятся", href: "/admin/sources" });
   if (isAdmin) {
     if (!ai?.enabled || !provider) todo.push({ text: "ИИ-помощник выключен или не настроен — работает обычный поиск по правилам", href: "/admin/ai" });
     if (!max?.enabled && !tg?.enabled) todo.push({ text: "Ни один бот не включён", href: "/admin/bots" });
-    if (demo > 0) todo.push({ text: `В базе ${demo} тестовых событий — на сайте видна плашка «Тестовые данные»`, href: "/admin/data" });
   }
 
   return (
@@ -48,7 +47,7 @@ export default async function AdminOverview() {
           <Stat label="актуальных событий" value={upcoming} />
           <Stat label="всего в базе" value={total} />
           <Stat label="отменённых впереди" value={cancelled} tone={cancelled ? "warn" : undefined} />
-          <Stat label="тестовых" value={demo} tone={demo ? "warn" : undefined} />
+          <Stat label="источников включено" value={sources} tone={sources ? undefined : "warn"} />
         </div>
       </Section>
 

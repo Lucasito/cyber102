@@ -2,7 +2,6 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { clearDemo, seedDemo } from "@/lib/demo-data";
 import { createAdminToken, dropSessions, requireAdmin, signOut } from "@/lib/server/admin";
 import { mailReady, mailTemplates, sendMail, sendMailQuietly } from "@/lib/server/mail";
 import { aiProviderName, chat } from "@/lib/server/ai";
@@ -35,7 +34,6 @@ export async function saveSite(_: ActionState, f: FormData): Promise<ActionState
       heroTitle: text(f, "heroTitle"),
       heroSubtitle: text(f, "heroSubtitle"),
       notice: text(f, "notice"),
-      testBanner: flag(f, "testBanner"),
       examples: text(f, "examples").split("\n").map((s) => s.trim()).filter(Boolean).slice(0, 6),
     });
     return done("Настройки сайта сохранены");
@@ -188,23 +186,7 @@ export async function saveMap(_: ActionState, f: FormData): Promise<ActionState>
   }
 }
 
-export async function loadDemo(): Promise<ActionState> {
-  await requireAdmin();
-  try {
-    return done(`Загружено тестовых событий: ${await seedDemo(db)}`);
-  } catch (e) {
-    return fail(e);
-  }
-}
 
-export async function removeDemo(): Promise<ActionState> {
-  await requireAdmin();
-  try {
-    return done(`Удалено тестовых событий: ${await clearDemo(db)}`);
-  } catch (e) {
-    return fail(e);
-  }
-}
 
 export async function logout() {
   await requireAdmin("ORGANIZER");

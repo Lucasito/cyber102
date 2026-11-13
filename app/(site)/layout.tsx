@@ -1,10 +1,8 @@
 import { headers } from "next/headers";
 import Link from "next/link";
 import { MessengerIcon } from "@/components/messenger-icon";
-import { DEMO_SOURCE } from "@/lib/demo-data";
 import { tr, type Lang } from "@/lib/i18n";
 import { botLinks } from "@/lib/server/bot-links";
-import { db } from "@/lib/server/db";
 import { getLang } from "@/lib/server/lang";
 import { getSettings } from "@/lib/server/settings";
 
@@ -36,14 +34,8 @@ async function LangSwitch({ lang }: { lang: Lang }) {
 
 export default async function SiteLayout({ children }: { children: React.ReactNode }) {
   const [site, bots, lang] = await Promise.all([getSettings("site"), botLinks(), getLang()]);
-  const hasDemo = site.testBanner && (await db.event.count({ where: { sources: { some: { source: DEMO_SOURCE } } }, take: 1 })) > 0;
   return (
     <div className="flex min-h-dvh flex-col" lang={lang === "ba" ? "ba" : "ru"}>
-      {hasDemo && (
-        <div className="bg-amber-100 px-4 py-2 text-center text-sm text-amber-900">
-          <b>{tr(lang, "testBanner")}</b> {tr(lang, "testBannerText")}
-        </div>
-      )}
       {site.notice && <div className="bg-stone-900 px-4 py-2 text-center text-sm text-white">{site.notice}</div>}
       <header className="sticky top-0 z-20 border-b border-black/5 bg-[#f7f6f3]/85 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">

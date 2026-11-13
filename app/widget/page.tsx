@@ -1,9 +1,7 @@
 import { EventCard } from "@/components/event-card";
 import { toCard } from "@/lib/format";
-import { DEMO_SOURCE } from "@/lib/demo-data";
-import { db } from "@/lib/server/db";
 import { datePresets, localDay, parseEventFilter, searchEvents } from "@/lib/server/events";
-import { getSettings } from "@/lib/server/settings";
+
 import { HeightReporter } from "./height-reporter";
 
 export const dynamic = "force-dynamic";
@@ -34,14 +32,12 @@ export default async function Widget({ searchParams }: { searchParams: Promise<R
   const parsed = parseEventFilter({ limit: "6", ...sp, ...periodDates(period) });
   const result = parsed.success ? await searchEvents(parsed.data) : { items: [] };
   const base = process.env.PUBLIC_URL ?? "";
-  const demo = (await getSettings("site")).testBanner && (await db.event.count({ where: { sources: { some: { source: DEMO_SOURCE } } }, take: 1 })) > 0;
   const color = /^[0-9a-f]{6}$/i.test(accent ?? "") ? `#${accent}` : undefined;
   const list = layout === "list";
   return (
     <main className="p-2" style={color ? ({ "--brand": color } as React.CSSProperties) : undefined}>
       {wid && <HeightReporter wid={wid.slice(0, 40)} />}
       {title && <h2 className="mb-2 border-l-4 border-[var(--brand)] pl-2 text-lg font-semibold text-[var(--brand)]">{title.slice(0, 120)}</h2>}
-      {demo && <p className="mb-2 rounded-lg bg-amber-100 px-3 py-1.5 text-center text-xs text-amber-900">Тестовые данные — события условные</p>}
       {result.items.length ? (
         <div className={list ? "grid gap-2" : "grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]"}>
           {result.items.map((e) => (

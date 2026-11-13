@@ -16,7 +16,6 @@ export const settingsSchema = {
     heroTitle: str,
     heroSubtitle: str,
     notice: str, // объявление над шапкой (пусто — нет)
-    testBanner: bool, // плашка «Тестовые данные», пока в базе есть демо-события
     examples: z.array(z.string().trim().max(120)).max(6).default([]),
   }),
   ai: z.object({

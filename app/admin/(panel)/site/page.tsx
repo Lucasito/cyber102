@@ -1,5 +1,5 @@
 import { PageTitle, Section } from "@/components/admin/blocks";
-import { Field, Input, SettingsForm, Textarea, Toggle } from "@/components/admin/ui";
+import { Field, Input, SettingsForm, Textarea } from "@/components/admin/ui";
 import { requireAdmin } from "@/lib/server/admin";
 import { DEFAULT_EXAMPLES, DEFAULT_HERO_SUBTITLE, DEFAULT_HERO_TITLE, getSettings } from "@/lib/server/settings";
 import { saveSite } from "../../actions";
@@ -24,7 +24,6 @@ export default async function AdminSite() {
           <Field label="Объявление над шапкой" hint="Например, о технических работах. Пусто — не показывать.">
             <Input name="notice" defaultValue={site.notice} />
           </Field>
-          <Toggle name="testBanner" defaultChecked={site.testBanner} label="Показывать плашку «Тестовые данные», пока в базе есть тестовые события" />
         </SettingsForm>
       </Section>
     </>

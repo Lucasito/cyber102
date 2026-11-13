@@ -18,6 +18,7 @@
     "seed:demo": "tsx scripts/seed-demo.mts",
     "sources:seed": "tsx scripts/seed-sources.mts",
     "sources:preview": "tsx --conditions=react-server scripts/sources-preview.mts",
+    "sources:run": "tsx --conditions=react-server scripts/sources-run.mts",
     "logo:export": "node scripts/export-logo.mjs",
     "postinstall": "prisma generate"
   },
