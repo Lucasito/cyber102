@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import type { EventStatus } from "@/generated/prisma/client";
 import { audit, diffFields } from "@/lib/server/audit";
+import { mergeEvents } from "@/lib/server/dedup";
 import { requireAdmin } from "@/lib/server/admin";
 import { db } from "@/lib/server/db";
 import { importRows, parseFile, type ImportReport } from "@/lib/server/import";
@@ -168,6 +169,39 @@ export async function deleteEvent(id: string) {
     return fail(e);
   }
   redirect("/admin/events?deleted=1");
+}
+
+// ── Дубли ────────────────────────────────────────────────────────────────────
+
+/** Это одно событие: dropId сводится в keepId (ссылки на источники, пустые поля, напоминания), дубль удаляется. */
+export async function mergeDuplicate(keepId: string, dropId: string): Promise<ActionState> {
+  const me = await requireAdmin("MODERATOR");
+  try {
+    const r = await mergeEvents(keepId, dropId);
+    await audit({ userLogin: me.login, action: "merge", entity: "event", entityId: keepId, summary: `Объединены дубли: «${r.dropTitle}» → «${r.keepTitle}»` });
+    refresh();
+    return { ok: true, message: `Объединено в «${r.keepTitle}»` };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Это разные события: пара больше не предлагается как дубль, пометка «возможный дубль» снимается. */
+export async function markDistinct(aId: string, bId: string): Promise<ActionState> {
+  const me = await requireAdmin("MODERATOR");
+  try {
+    const [a, b] = await Promise.all([db.event.findUniqueOrThrow({ where: { id: aId } }), db.event.findUniqueOrThrow({ where: { id: bId } })]);
+    const clean = (note: string | null) => note?.split("; ").filter((x) => !x.startsWith("возможный дубль")).join("; ") || null;
+    await db.$transaction([
+      db.event.update({ where: { id: a.id }, data: { distinctFrom: [...new Set([...a.distinctFrom, b.id])], ...(a.possibleDuplicateId === b.id ? { possibleDuplicateId: null, reviewNote: clean(a.reviewNote) } : {}) } }),
+      db.event.update({ where: { id: b.id }, data: { distinctFrom: [...new Set([...b.distinctFrom, a.id])], ...(b.possibleDuplicateId === a.id ? { possibleDuplicateId: null, reviewNote: clean(b.reviewNote) } : {}) } }),
+    ]);
+    await audit({ userLogin: me.login, action: "update", entity: "event", entityId: a.id, summary: `Не дубли: «${a.title}» и «${b.title}»` });
+    refresh();
+    return { ok: true, message: "Отмечено: разные события" };
+  } catch (e) {
+    return fail(e);
+  }
 }
 
 // ── Импорт ───────────────────────────────────────────────────────────────────

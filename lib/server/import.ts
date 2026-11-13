@@ -2,6 +2,7 @@ import "server-only";
 import { createHash } from "node:crypto";
 import type { EventStatus, Prisma, Publication, SourceType } from "@/generated/prisma/client";
 import { audit, diffFields } from "./audit";
+import { findDuplicate } from "./dedup";
 import { db } from "./db";
 import { settlementInBashkortostan } from "./geocode";
 import { getSettings } from "./settings";
@@ -240,6 +241,9 @@ async function venueFor(tx: Prisma.TransactionClient, n: Normalized) {
   return Object.keys(fill).length ? tx.venue.update({ where: { id: found.id }, data: fill }) : found;
 }
 
+/** Поля, которые другой источник может дополнить, если у события они пустые. */
+const FILL_FIELDS = ["description", "endsAt", "durationMin", "priceMin", "priceMax", "ageLimit", "categoryId", "language", "orgUrl", "ticketUrl", "imageUrl"] as const;
+
 const EVENT_FIELDS = ["title", "description", "startsAt", "endsAt", "durationMin", "status", "priceMin", "priceMax", "ageLimit", "categoryId", "venueId", "tags", "language", "orgUrl", "ticketUrl", "imageUrl", "pushkinCard"] as const;
 
 export type ImportOptions = {
@@ -350,9 +354,18 @@ export async function importRows(rows: Record<string, unknown>[], opts: ImportOp
         const venue = await venueFor(tx, n);
         // Своё событие источника: по externalId (переживает перенос даты) или по ключу дедупликации
         const bySource = n.externalId ? await tx.eventSource.findFirst({ where: { source, externalId: n.externalId }, select: { eventId: true } }) : null;
-        const existing = bySource
+        let existing = bySource
           ? await tx.event.findUnique({ where: { id: bySource.eventId } })
           : await tx.event.findFirst({ where: { OR: [{ dedupKey: key }, { normalizedTitle: n.normalizedTitle, venueId: venue.id, startsAt: n.startsAt }] } });
+        // Нечёткий поиск дубля из другого источника: «Спектакль «X»» и «X / перевод», площадка названа по-разному
+        const fuzzy = existing ? null : await findDuplicate(tx, { title: n.title, startsAt: n.startsAt, endsAt: n.endsAt, city: n.city, venue: n.venue });
+        if (fuzzy?.level === "same") existing = await tx.event.findUnique({ where: { id: fuzzy.id } });
+        else if (fuzzy) {
+          n.issues.push(`возможный дубль «${fuzzy.title}» (${fuzzy.venueName ?? "площадка не указана"})`);
+        }
+        // «Своё» событие источника можно обновлять; чужое (то же событие из другого источника) — только дополнять пустые поля,
+        // иначе два источника с разной ценой или описанием переписывали бы карточку друг за другом на каждом сборе
+        const own = !!existing && (!!bySource || (await tx.eventSource.count({ where: { eventId: existing.id, source } })) > 0);
 
         const rescheduled = existing && existing.startsAt.getTime() !== n.startsAt.getTime() && bySource;
         const data = {
@@ -382,16 +395,36 @@ export async function importRows(rows: Record<string, unknown>[], opts: ImportOp
         let outcome: RowResult["result"];
         if (existing && opts.review) {
           // Недоверенные данные не меняют то, что уже есть в афише, и не добавляют к нему ссылок
-          return { eventId: existing.id, outcome: "unchanged" as const, skipped: true };
+          return { eventId: existing.id, outcome: "unchanged" as const, skipped: true, mergedInto: own ? null : existing.title };
         }
         if (!existing) {
           const publication: Publication = n.draft || n.issues.length ? "DRAFT" : "PUBLISHED";
           const created = await tx.event.create({
-            data: { ...data, dedupKey: key, publication, verifiedAt: new Date(), confidence: opts.review ? 0.5 : n.issues.length ? 0.7 : 1, createdById: opts.createdById ?? null, ...review },
+            data: {
+              ...data,
+              dedupKey: key,
+              publication,
+              verifiedAt: new Date(),
+              confidence: opts.review ? 0.5 : n.issues.length ? 0.7 : 1,
+              createdById: opts.createdById ?? null,
+              possibleDuplicateId: fuzzy?.level === "possible" ? fuzzy.id : null,
+              ...review,
+            },
           });
           eventId = created.id;
           outcome = "created";
           await audit({ userLogin: opts.userLogin, action: "import", entity: "event", entityId: eventId, summary: `Импорт «${opts.fileName}», строка ${rowNo}: создано «${n.title}»${n.issues.length ? ` — в модерацию: ${n.issues.join("; ")}` : ""}` }, tx);
+        } else if (!own) {
+          // То же событие из другого источника: дополняем пустые поля, ссылка на источник добавляется ниже
+          eventId = existing.id;
+          const fill = Object.fromEntries(
+            FILL_FIELDS.filter((k) => (existing as Record<string, unknown>)[k] == null && data[k] != null).map((k) => [k, data[k]]),
+          );
+          if (Object.keys(fill).length) {
+            await tx.event.update({ where: { id: existing.id }, data: fill });
+            outcome = "updated";
+            await audit({ userLogin: opts.userLogin, action: "import", entity: "event", entityId: eventId, summary: `Импорт «${opts.fileName}», строка ${rowNo}: то же событие из другого источника — дополнено «${existing.title}»` }, tx);
+          } else outcome = "unchanged";
         } else {
           eventId = existing.id;
           const diff = diffFields(existing as Record<string, unknown>, data, [...EVENT_FIELDS]);
@@ -413,7 +446,7 @@ export async function importRows(rows: Record<string, unknown>[], opts: ImportOp
           create: { source, sourceType, hash, payload: raw as Prisma.InputJsonValue, importId: run.id, eventId },
           update: { importId: run.id, eventId, error: null },
         });
-        return { eventId, outcome, skipped: false };
+        return { eventId, outcome, skipped: false, mergedInto: existing && !own ? existing.title : null };
       });
 
       const dup = seenInFile.get(key);
@@ -424,8 +457,12 @@ export async function importRows(rows: Record<string, unknown>[], opts: ImportOp
         eventId: result.eventId,
         title: n.title,
         reason: result.skipped
-          ? "такое событие уже есть в афише — изменения вносит модератор"
-          : dup
+          ? result.mergedInto
+            ? `дубль события «${result.mergedInto}» из другого источника — уже есть в афише`
+            : "такое событие уже есть в афише — изменения вносит модератор"
+          : result.mergedInto
+            ? `то же событие, что «${result.mergedInto}» из другого источника — добавлена ссылка${result.outcome === "updated" ? ", дополнены пустые поля" : ""}`
+            : dup
             ? `то же событие, что в строке ${dup} — объединено`
             : result.outcome === "unchanged"
               ? "такое событие уже есть, данные совпадают"

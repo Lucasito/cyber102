@@ -85,6 +85,8 @@ model Event {
   orgUrl           String? // организатор (билеты — ticketUrl)
   publication      Publication   @default(PUBLISHED)
   needsReview      Boolean       @default(false) // спорная карточка — в очередь модерации
+  possibleDuplicateId String? // похоже на это событие из другого источника — решает модератор («Объединить» / «Разные»)
+  distinctFrom     String[]      @default([]) // модератор решил: не дубль этих событий — в поиске дублей пара больше не показывается
   createdById      String? // кто добавил в админке (организатор видит свои события)
   createdBy        AdminUser?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
   reviewNote       String? // почему спорная
