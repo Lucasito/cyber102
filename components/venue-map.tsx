@@ -43,6 +43,8 @@ export function VenueMap({ points, className = "h-80", me, config = { provider: 
 async function osmMap(el: HTMLDivElement, points: MapPoint[], me: { lat: number; lon: number } | null) {
   const L = await import("leaflet");
   const map = L.map(el, { scrollWheelZoom: false });
+  // Без префикса «🇺🇦 Leaflet»: лицензия Leaflet подписи не требует. «© OpenStreetMap» — обязателен (лицензия ODbL)
+  map.attributionControl.setPrefix(false);
   // Плитки OpenStreetMap (бесплатно, с указанием авторства); приглушены CSS-фильтром под спокойный дизайн
   L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", {
     maxZoom: 19,
