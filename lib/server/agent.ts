@@ -89,6 +89,7 @@ const PHRASES = {
     relaxed: { q: "По этому названию", near: "Рядом с центром", dates: "На эти даты", category: "В этом жанре", city: "В этом городе" },
     relaxedTail: "ничего не нашлось — вот ближайшее.",
     noMore: "Других событий по этим условиям в афише нет. Можно изменить дату, бюджет или жанр.",
+    noCheaper: "Дешевле по этим условиям в афише ничего нет. Можно поискать бесплатные события или сменить жанр.",
     askAge: "Сколько лет ребёнку? Подберу точнее.",
     reply: "Обращайся на «вы».",
   },
@@ -100,6 +101,7 @@ const PHRASES = {
     relaxed: { q: "Был исем буйынса", near: "Үҙәк янында", dates: "Был көндәргә", category: "Был жанрҙа", city: "Был ҡалала" },
     relaxedTail: "бер нәмә лә табылманы — бына иң яҡындары.",
     noMore: "Был шарттар буйынса афишала башҡа саралар юҡ. Көндө, бюджетты йәки жанрҙы үҙгәртергә мөмкин.",
+    noCheaper: "Был шарттар буйынса арзаныраҡ саралар афишала юҡ. Түләүһеҙ сараларҙы эҙләргә йәки жанрҙы үҙгәртергә мөмкин.",
     askAge: "Балаға нисә йәш? Теүәлерәк һайлармын.",
     reply: "Яуапты башҡорт телендә яҙ, «һеҙ» тип мөрәжәғәт ит. Сараларҙың исемдәрен һәм урындарын үҙгәртмә.",
   },
@@ -251,11 +253,13 @@ async function agentCore(
   // Пусто — ослабляем по очереди: «рядом», даты, жанр, город. Бюджет и возраст не трогаем — это жёсткие условия.
   // Жанр, который угадала модель (в репликах его нет — «с ребёнком» → «детям»), снимаем первым
   // Название, которое модель угадала сама (в правилах его нет), снимаем первым — оно не должно обнулять выдачу
-  const head = rules.q ? (["near"] as const) : (["q", "near"] as const);
-  const relaxSteps = rules.category ? ([...head, "dates", "category", "city"] as const) : ([...head, "category", "dates", "city"] as const);
+  // Условия, перенесённые из прошлой подборки («а дешевле?» после «концерты»), — тоже названные пользователем
+  const stated = { ...(follow?.set ?? {}), ...rules } as Record<string, unknown>;
+  const head = stated.q ? (["near"] as const) : (["q", "near"] as const);
+  const relaxSteps = stated.category ? ([...head, "dates", "category", "city"] as const) : ([...head, "category", "dates", "city"] as const);
   // «А ещё» — без уже показанных в этом диалоге
   const exclude = new Set(follow?.exclude ?? []);
-  const strictMore = !!follow && exclude.size > 0 && follow.kinds.every((k) => k === "more" || k === "otherDay" || k === "cheaper");
+  const strictMore = !!follow && follow.kinds.every((k) => k === "more" || k === "otherDay" || k === "cheaper");
   const find = async (f: EventFilter) => {
     const r = await searchEvents({ ...f, limit: f.limit + exclude.size });
     return { items: r.items.filter((e) => !exclude.has(e.id)).slice(0, f.limit) };
@@ -284,7 +288,8 @@ async function agentCore(
     steps.push({ step: "relax", drop: key, ms: Date.now() - t0, filter: plain(current), found: items.length });
   }
   if (!items.length) {
-    return { text: exclude.size ? P.noMore : P.nothing, events: [], filter, suggestions: ["Новый поиск"] };
+    const text = !strictMore ? P.nothing : follow!.kinds.includes("cheaper") && !exclude.size ? P.noCheaper : P.noMore;
+    return { text, events: [], filter, suggestions: ["Новый поиск"] };
   }
   // Идущие давно (выставки) — после событий, которые начинаются в выбранный период
   const periodStart = current.dateFrom ?? now;

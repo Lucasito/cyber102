@@ -227,7 +227,8 @@ for (const c of cases) {
   const notes: string[] = [];
   // «А дешевле?» — дешевле самого дешёвого из прошлой подборки; «а ещё?» — без уже показанных
   const prevEvents = replies.slice(0, -1).flatMap((r) => r.events);
-  const prevPrices = (replies.at(-2)?.events ?? []).map((e) => e.priceMin).filter((n): n is number => n != null);
+  const prevShown = replies.slice(0, -1).findLast((r) => r.events.length)?.events ?? [];
+  const prevPrices = prevShown.map((e) => e.priceMin).filter((n): n is number => n != null);
   const cheaperThan = c.cheaper && prevPrices.length ? Math.min(...prevPrices) : null;
   const shownBefore = new Set(prevEvents.map((e) => e.id));
   const extra = (e: DbEvent) => [

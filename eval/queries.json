@@ -856,6 +856,20 @@
       "mustInclude": [
         "нет события"
       ]
+    },
+    {
+      "id": "context-more-then-cheaper",
+      "type": "context",
+      "dialog": [
+        "Концерты в Уфе",
+        "а ещё?",
+        "а дешевле?"
+      ],
+      "constraints": {
+        "category": "concert",
+        "city": "Уфа"
+      },
+      "cheaper": true
     }
   ]
 }
