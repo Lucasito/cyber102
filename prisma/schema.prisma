@@ -50,13 +50,14 @@ model Category {
 }
 
 model Venue {
-  id      String  @id @default(cuid())
-  name    String
-  city    String
-  address String?
-  lat     Float?
-  lon     Float?
-  events  Event[]
+  id         String    @id @default(cuid())
+  name       String
+  city       String
+  address    String?
+  lat        Float?
+  lon        Float?
+  geocodedAt DateTime? // когда искали координаты по адресу (найдены или нет) — чтобы не повторять
+  events     Event[]
 
   @@unique([name, city])
   @@index([city])
@@ -298,12 +299,45 @@ model AuditLog {
  */
 model Subscription {
   id           String   @id @default(cuid())
-  botUserId    String
-  botUser      BotUser  @relation(fields: [botUserId], references: [id], onDelete: Cascade)
+  botUserId    String? // подписка из бота; null — через API (лента по секретной ссылке)
+  botUser      BotUser? @relation(fields: [botUserId], references: [id], onDelete: Cascade)
+  secret       String?  @unique // ключ подписки через API: лента и отписка — только с ним
   city         String? // null — любой город
   category     String? // slug категории; null — любая
   notifiedUpTo DateTime @default(now()) // события, добавленные позже, — новые для подписчика
   createdAt    DateTime @default(now())
 
   @@unique([botUserId, city, category])
+}
+
+/**
+ * Обращение с сайта или через API (ТЗ 6.3): заявка организатора, уточнение по событию, вопрос.
+ * Контакт — только если человек сам его оставил для ответа; хранится 365 дней (README, «Персональные данные»).
+ */
+model Feedback {
+  id        String   @id @default(cuid())
+  kind      String // organizer | correction | question
+  eventId   String?
+  name      String?
+  contact   String? // почта или телефон для ответа — по желанию
+  message   String
+  source    String   @default("site") // site | api | bot
+  status    String   @default("new") // new | done
+  handledBy String?
+  createdAt DateTime @default(now())
+
+  @@index([status, createdAt])
+}
+
+/**
+ * Кеш геокодера (Nominatim / OpenStreetMap): адрес или населённый пункт → координаты и регион.
+ */
+model GeoCache {
+  query     String   @id // нормализованный запрос
+  found     Boolean
+  lat       Float?
+  lon       Float?
+  region    String? // субъект РФ: «Башкортостан»
+  display   String?
+  createdAt DateTime @default(now())
 }

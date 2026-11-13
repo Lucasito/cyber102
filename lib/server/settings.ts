@@ -69,6 +69,8 @@ export const settingsSchema = {
     clarifyText: str,
     clarifySuggestions: z.array(z.string().trim().max(40)).max(10).default([]),
     followupSuggestions: z.array(z.string().trim().max(40)).max(10).default([]),
+    // Населённые пункты РБ сверх встроенного справочника (сёла): события в них импорт принимает
+    extraSettlements: z.array(z.string().trim().max(60)).max(500).default([]),
   }),
   map: z.object({
     provider: z.enum(["osm", "yandex"]).default("osm"),

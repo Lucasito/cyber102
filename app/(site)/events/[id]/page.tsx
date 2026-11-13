@@ -209,6 +209,10 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
             </a>
           </span>
         ))}
+        {" · "}
+        <Link href={`/feedback?event=${e.id}`} className="underline underline-offset-2 hover:text-stone-900">
+          {t("reportError")}
+        </Link>
       </p>
 
       {more.length > 0 && (

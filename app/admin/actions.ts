@@ -135,7 +135,7 @@ export async function testTelegram(): Promise<ActionState> {
 }
 
 /** Числовые поля раздела «Параметры» — берём все, что объявлены в схеме, кроме текстов и списков. */
-const TUNING_TEXT_KEYS = ["clarifyText", "clarifySuggestions", "followupSuggestions"] as const;
+const TUNING_TEXT_KEYS = ["clarifyText", "clarifySuggestions", "followupSuggestions", "extraSettlements"] as const;
 
 export async function saveTuning(_: ActionState, f: FormData): Promise<ActionState> {
   await requireAdmin();
@@ -153,6 +153,7 @@ export async function saveTuning(_: ActionState, f: FormData): Promise<ActionSta
       clarifyText: text(f, "clarifyText"),
       clarifySuggestions: lines("clarifySuggestions"),
       followupSuggestions: lines("followupSuggestions"),
+      extraSettlements: [...new Set(text(f, "extraSettlements").split(/[\n,;]/).map((s) => s.trim()).filter(Boolean))].slice(0, 500),
     });
     return done("Параметры сохранены — применяются сразу (значения вне допустимых пределов заменены на стандартные)");
   } catch (e) {

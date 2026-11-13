@@ -3,6 +3,8 @@ import { createHash } from "node:crypto";
 import type { EventStatus, Prisma, Publication, SourceType } from "@/generated/prisma/client";
 import { audit, diffFields } from "./audit";
 import { db } from "./db";
+import { settlementInBashkortostan } from "./geocode";
+import { getSettings } from "./settings";
 import { categorySlug, dedupKey, inBashkortostan, normalizeCity, normalizeTitle, parseAge, parseBool, parseDate, parseDuration, parsePrice, parseTags, parseUrl, RB_SETTLEMENTS } from "./normalize";
 
 // Импорт событий из CSV/JSON (ТЗ 6.1): валидация, нормализация, дедупликация, идемпотентность, отчёт.
@@ -141,9 +143,10 @@ type Normalized = {
   draft: boolean;
   pushkinCard: boolean;
   issues: string[]; // почему карточка спорная
+  checkRegion: boolean; // населённого пункта нет в справочнике — проверить регион геокодером
 };
 
-function normalizeRow(r: Record<string, unknown>, ctx: { cities: string[]; categories: string[]; now: Date }): Normalized | { error: string } {
+function normalizeRow(r: Record<string, unknown>, ctx: { cities: string[]; categories: string[]; now: Date; extraSettlements: string[] }): Normalized | { error: string } {
   const title = typeof r.title === "string" ? r.title.replace(/\s+/g, " ").trim() : "";
   const missing = [
     !title && "название",
@@ -185,10 +188,11 @@ function normalizeRow(r: Record<string, unknown>, ctx: { cities: string[]; categ
   const cat = categorySlug(r.category, ctx.categories);
   const city = normalizeCity(String(r.city), ctx.cities);
 
+
   const issues: string[] = [];
   if (!cat) issues.push(r.category ? `категория «${String(r.category)}» не из справочника` : "нет категории");
   if (priceMin == null && priceMax == null) issues.push("цена не указана");
-  if (!inBashkortostan(city)) issues.push(`населённого пункта «${city}» нет в справочнике РБ — проверьте, что событие в Башкортостане`);
+
 
   return {
     externalId: r.externalId != null ? String(r.externalId).slice(0, 100) : null,
@@ -217,6 +221,7 @@ function normalizeRow(r: Record<string, unknown>, ctx: { cities: string[]; categ
     draft: statusHit === "DRAFT",
     pushkinCard: parseBool(r.pushkin) ?? false,
     issues,
+    checkRegion: !inBashkortostan(city, ctx.extraSettlements),
   };
 }
 
@@ -245,14 +250,16 @@ export async function importRows(rows: Record<string, unknown>[], opts: { fileNa
   if (rows.length > MAX_ROWS) throw new Error(`Слишком много строк: ${rows.length}, не больше ${MAX_ROWS} за раз`);
   const sourceType = opts.sourceType ?? "IMPORT";
   const source = opts.source.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").slice(0, 60) || "import";
-  const [venues, categories] = await Promise.all([db.venue.findMany({ distinct: ["city"], select: { city: true } }), db.category.findMany({ select: { id: true, slug: true } })]);
+  const categories = await db.category.findMany({ select: { id: true, slug: true } });
   // Справочник для исправления опечаток: населённые пункты РБ и города уже известных площадок
-  const ctx = { cities: [...new Set([...RB_SETTLEMENTS, ...venues.map((v) => v.city)])], categories: categories.map((c) => c.slug), now: new Date() };
+  const extraSettlements = (await getSettings("tuning")).extraSettlements;
+  const ctx = { cities: [...new Set([...RB_SETTLEMENTS, ...extraSettlements])], categories: categories.map((c) => c.slug), now: new Date(), extraSettlements };
   const categoryId = new Map(categories.map((c) => [c.slug, c.id]));
 
   const run = await db.importRun.create({ data: { fileName: opts.fileName.slice(0, 200), source, total: rows.length, report: [], userLogin: opts.userLogin } });
   const report: RowResult[] = [];
   const seenInFile = new Map<string, number>();
+  const regionCache = new Map<string, boolean | null>();
 
   for (const [i, raw] of rows.entries()) {
     const rowNo = i + 2; // как в таблице: строка 1 — заголовок
@@ -266,6 +273,14 @@ export async function importRows(rows: Record<string, unknown>[], opts: { fileNa
       }
       const mapped = mapRow(raw);
       const n = normalizeRow(mapped, ctx);
+      // Афиша — только о событиях в Башкортостане (ТЗ 1): пункта нет в справочнике — спрашиваем геокодер.
+      // Вне РБ — пропускаем; геокодер недоступен — не теряем событие, а отправляем на проверку модератору.
+      if (!("error" in n) && n.checkRegion) {
+        const inRb = regionCache.has(n.city) ? regionCache.get(n.city)! : await settlementInBashkortostan(n.city);
+        regionCache.set(n.city, inRb);
+        if (inRb === false) Object.assign(n, { error: `вне Башкортостана: «${n.city}»` });
+        else if (inRb === null) n.issues.push(`регион «${n.city}» не проверен — геокодер недоступен`);
+      }
       if ("error" in n) {
         await db.rawRecord.upsert({
           where: { source_hash: { source, hash } },

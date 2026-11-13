@@ -41,7 +41,9 @@ export function GET(request: Request) {
       version: "1.0.0",
       description:
         "Открытый API афиши культурных событий Республики Башкортостан. Неофициальный сервис: не является сервисом Министерства культуры РБ. " +
-        "У каждого события есть ссылка на источник. Ошибки — в едином формате { code, message, details }.",
+        "У каждого события есть ссылка на источник. Ошибки — в едином формате { code, message, details }. " +
+        "Каждый ответ содержит X-Request-Id (можно передать свой) — по нему ищется запрос в логах. " +
+        "Справочники и карточки кешируются: ETag + Cache-Control, повторный запрос с If-None-Match получает 304.",
     },
     servers: [{ url: origin }],
     paths: {
@@ -67,6 +69,62 @@ export function GET(request: Request) {
             "200": { description: "Событие с площадкой, категорией и источниками" },
             "404": err("Не найдено", { code: "not_found", message: "Событие не найдено" }),
           },
+        },
+      },
+      "/api/v1/cities": {
+        get: { summary: "Справочник городов", description: "Кеш: ETag, Cache-Control 300 с.", responses: { "200": { description: "{ items: [{ name, venues, events }] }" } } },
+      },
+      "/api/v1/venues": {
+        get: {
+          summary: "Справочник площадок",
+          parameters: [{ name: "city", in: "query", schema: { type: "string" }, description: "Только площадки города" }],
+          responses: { "200": { description: "{ items: [{ id, name, city, address, lat, lon, events }] }" } },
+        },
+      },
+      "/api/v1/categories": {
+        get: { summary: "Справочник категорий", description: "code — значение для фильтра category.", responses: { "200": { description: "{ items: [{ code, name, events }] }" } } },
+      },
+      "/api/v1/feedback": {
+        post: {
+          summary: "Обращение: заявка организатора, уточнение по событию, вопрос",
+          requestBody: {
+            content: {
+              "application/json": {
+                example: { kind: "correction", eventId: "…", message: "Концерт перенесён на 20 декабря, см. сайт филармонии", contact: "необязательно — для ответа" },
+              },
+            },
+          },
+          responses: {
+            "201": { description: "{ id, status: received }" },
+            "400": err("Неверное тело", { code: "bad_request", message: "Неверное тело запроса", details: [{ param: "message", problem: "Опишите подробнее — не меньше 10 символов" }] }),
+            "429": err("Лимит обращений с адреса", { code: "rate_limited", message: "Слишком много обращений с вашего адреса — попробуйте через час." }),
+          },
+        },
+      },
+      "/api/v1/subscriptions": {
+        post: {
+          summary: "Подписка на новые события города и категории",
+          description: "Без персональных данных: в ответе ключ key — лента и отписка доступны только с ним.",
+          requestBody: { content: { "application/json": { example: { city: "Уфа", category: "concert" } } } },
+          responses: { "201": { description: "{ id, key, city, category, feedUrl, unsubscribe }" }, "400": err("Неизвестная категория", { code: "bad_request", message: "Неизвестная категория — коды в /api/v1/categories" }) },
+        },
+      },
+      "/api/v1/subscriptions/{id}": {
+        get: {
+          summary: "Лента подписки: актуальные события, сначала недавно добавленные",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string" } },
+            { name: "key", in: "query", required: true, schema: { type: "string" }, description: "Ключ из ответа POST (или заголовок X-Subscription-Key)" },
+          ],
+          responses: { "200": { description: "{ id, city, category, createdAt, items }" }, "404": err("Нет подписки или неверный ключ", { code: "not_found", message: "Подписка не найдена" }) },
+        },
+        delete: {
+          summary: "Отписаться: подписка удаляется",
+          parameters: [
+            { name: "id", in: "path", required: true, schema: { type: "string" } },
+            { name: "key", in: "query", required: true, schema: { type: "string" } },
+          ],
+          responses: { "204": { description: "Удалено" }, "404": err("Нет подписки или неверный ключ", { code: "not_found", message: "Подписка не найдена" }) },
         },
       },
       "/api/ai/chat": {

@@ -2,6 +2,7 @@ import { z } from "zod";
 import { runAgent } from "@/lib/server/agent";
 import { AiError } from "@/lib/server/ai";
 import { logQuery } from "@/lib/server/analytics";
+import { apiRoute } from "@/lib/server/api";
 import { apiError, json, preflight } from "@/lib/server/cors";
 import { clientIp, rateLimit } from "@/lib/server/rate-limit";
 
@@ -14,7 +15,7 @@ const bodySchema = z.object({
 });
 
 /** POST /api/ai/chat — ИИ-агент: свободный запрос → уточнение или подборка с объяснением. */
-export async function POST(request: Request) {
+export const POST = apiRoute("POST /api/ai/chat", async (request) => {
   // ИИ не настроен или недоступен — агент всё равно отвечает: правила + шаблон (резервный режим, ТЗ 7.5)
   const body = bodySchema.safeParse(await request.json().catch(() => null));
   if (!body.success) {
@@ -37,4 +38,4 @@ export async function POST(request: Request) {
     if (e instanceof AiError) return apiError(502, "ai_error", e.message);
     throw e;
   }
-}
+});

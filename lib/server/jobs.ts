@@ -1,6 +1,7 @@
 import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 import { db } from "./db";
+import { geocodeVenues } from "./geocode";
 import { TZ, type EventItem } from "./events";
 import { eventLine, subscriptionDigest } from "./bot-browse";
 import { BOTS_PAUSED, getSettings } from "./settings";
@@ -8,7 +9,7 @@ import { BOTS_PAUSED, getSettings } from "./settings";
 // Фоновые задачи (запуск — instrumentation.ts): раз в минуту.
 //  • Прошедшие события получают статус PAST — в API и админке статус соответствует действительности.
 //  • Отправка напоминаний из ботов.
-//  • Раз в час — очистка по срокам хранения (RETENTION) и рассылка по подпискам (с 10:00, не чаще раза в день).
+//  • Раз в 5 минут — координаты площадок по адресу (Nominatim). Раз в час — очистка по срокам хранения (RETENTION) и рассылка по подпискам (с 10:00, не чаще раза в день).
 
 const MINUTE = 60_000;
 
@@ -74,12 +75,14 @@ export async function sendSubscriptionDigests() {
   const hour = Number(new Date().toLocaleString("en-US", { timeZone: TZ, hour: "numeric", hour12: false }));
   if (hour < 10 || hour >= 21 || Date.now() - lastDigestRun < 60 * MINUTE) return;
   lastDigestRun = Date.now();
-  const due = await db.subscription.findMany({ where: { notifiedUpTo: { lt: new Date(Date.now() - 20 * 60 * MINUTE) } }, include: { botUser: true } });
+  // Только подписки из ботов: у подписок через API — своя лента по ссылке
+  const due = await db.subscription.findMany({ where: { botUserId: { not: null }, notifiedUpTo: { lt: new Date(Date.now() - 20 * 60 * MINUTE) } }, include: { botUser: true } });
   const byUser = new Map<string, typeof due>();
-  for (const s of due) byUser.set(s.botUserId, [...(byUser.get(s.botUserId) ?? []), s]);
+  for (const s of due) if (s.botUserId) byUser.set(s.botUserId, [...(byUser.get(s.botUserId) ?? []), s]);
   const base = process.env.PUBLIC_URL ?? "";
   for (const subs of byUser.values()) {
     const user = subs[0].botUser;
+    if (!user) continue;
     const send = senders.get(user.platform);
     if (!send) continue;
     const seen = new Map<string, EventItem>();
@@ -98,7 +101,7 @@ export async function sendSubscriptionDigests() {
 }
 
 /** Сроки хранения (ТЗ, раздел 10: персональные данные — минимум, срок хранения указан в README). */
-export const RETENTION = { dialogDays: 30, queryLogDays: 180 } as const;
+export const RETENTION = { dialogDays: 30, queryLogDays: 180, feedbackDays: 365 } as const;
 let lastPurge = 0;
 
 /** Раз в час: диалоги неактивных пользователей ботов, старые запросы аналитики, истёкшие сессии и ссылки из писем. */
@@ -112,10 +115,12 @@ export async function purgeOldData() {
     db.queryLog.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - RETENTION.queryLogDays * day) } } }),
     db.adminSession.deleteMany({ where: { expiresAt: { lt: now } } }),
     db.adminToken.deleteMany({ where: { expiresAt: { lt: now } } }),
+    db.feedback.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - RETENTION.feedbackDays * day) } } }),
   ]);
 }
 
 let started = false;
+let lastGeocode = 0;
 export function startJobs() {
   if (started) return;
   started = true;
@@ -124,6 +129,11 @@ export function startJobs() {
     await sendDueReminders().catch((e) => console.error("[jobs] напоминания:", e instanceof Error ? e.message : e));
     await purgeOldData().catch((e) => console.error("[jobs] очистка:", e instanceof Error ? e.message : e));
     await sendSubscriptionDigests().catch((e) => console.error("[jobs] подписки:", e instanceof Error ? e.message : e));
+    // Координаты площадок по адресу — раз в 5 минут, понемногу (правила Nominatim)
+    if (Date.now() - lastGeocode > 5 * MINUTE) {
+      lastGeocode = Date.now();
+      await geocodeVenues().catch((e) => console.error("[jobs] координаты:", e instanceof Error ? e.message : e));
+    }
   };
   setTimeout(tick, 15_000); // после старта — дать подняться ботам
   setInterval(tick, MINUTE);

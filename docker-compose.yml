@@ -1,4 +1,8 @@
-# Локальная разработка: только PostgreSQL. Приложение — npm run dev.
+# Запуск на чистой машине одной командой:  docker compose up --build
+# → http://localhost:3000 (через 3–5 минут: сборка образа, миграции, тестовые события).
+# Вход в админку — http://localhost:3000/admin, логин admin, пароль — в логе: docker compose logs app | grep bootstrap
+#
+# Для разработки — только база: npm run db:up (поднимает сервис db), приложение — npm run dev.
 services:
   db:
     image: postgres:16-alpine
@@ -11,5 +15,27 @@ services:
       - "127.0.0.1:5435:5432"
     volumes:
       - afisha-db:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U afisha -d afisha"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  app:
+    build: .
+    container_name: afisha-local-app
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql://afisha:afisha@db:5432/afisha
+      PUBLIC_URL: http://localhost:3000
+      BOOTSTRAP_DEMO: "1"
+      BOOTSTRAP_ADMIN: "1"
+      # ИИ необязателен: без ключа помощник отвечает обычным поиском по правилам (резервный режим).
+      # Ключ GigaChat или OpenAI-совместимого API задаётся в админке → «ИИ-помощник».
+    ports:
+      - "127.0.0.1:3000:3000"
+
 volumes:
   afisha-db:

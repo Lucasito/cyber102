@@ -1,0 +1,99 @@
+import "server-only";
+import { db } from "./db";
+import { errMessage, log } from "./log";
+import { normalizeTitle, RB_SETTLEMENTS } from "./normalize";
+
+// Геокодирование через Nominatim (OpenStreetMap): бесплатно, без ключа, доступен с сервера.
+// Правила Nominatim: не чаще 1 запроса в секунду, понятный User-Agent, без массовых выгрузок — поэтому
+// очередь с паузой и кеш в БД (GeoCache): один и тот же адрес не запрашивается повторно.
+// Используется для координат площадок и для проверки, что населённый пункт — в Башкортостане.
+
+const URL_BASE = "https://nominatim.openstreetmap.org/search";
+const UA = "afisha-rb/1.0 (culture events of Bashkortostan)";
+const GAP_MS = 1100;
+
+let last = 0;
+let chain: Promise<unknown> = Promise.resolve();
+
+/** Запросы — строго по одному с паузой ≥ 1,1 с (общая очередь процесса). */
+function queued<T>(fn: () => Promise<T>): Promise<T> {
+  const run = chain.then(async () => {
+    const wait = last + GAP_MS - Date.now();
+    if (wait > 0) await new Promise((r) => setTimeout(r, wait));
+    last = Date.now();
+    return fn();
+  });
+  chain = run.catch(() => {});
+  return run;
+}
+
+export type GeoResult = { found: boolean; lat: number | null; lon: number | null; region: string | null; display: string | null };
+
+type NominatimItem = { lat: string; lon: string; display_name: string; address?: { state?: string; region?: string } };
+
+/** Адрес или населённый пункт → координаты и регион. Результат (и «не найдено») кешируется. Сбой сети — null. */
+export async function geocode(query: string): Promise<GeoResult | null> {
+  const key = normalizeTitle(query).slice(0, 300);
+  if (!key) return null;
+  const cached = await db.geoCache.findUnique({ where: { query: key } });
+  if (cached) return cached;
+  try {
+    const items = await queued(async () => {
+      const u = new URL(URL_BASE);
+      u.search = new URLSearchParams({ format: "jsonv2", addressdetails: "1", limit: "1", countrycodes: "ru", "accept-language": "ru", q: query }).toString();
+      const res = await fetch(u, { headers: { "User-Agent": UA }, signal: AbortSignal.timeout(15_000) });
+      if (!res.ok) throw new Error(`Nominatim ${res.status}`);
+      return (await res.json()) as NominatimItem[];
+    });
+    const hit = items[0];
+    const result: GeoResult = hit
+      ? { found: true, lat: Number(hit.lat), lon: Number(hit.lon), region: hit.address?.state ?? hit.address?.region ?? null, display: hit.display_name.slice(0, 300) }
+      : { found: false, lat: null, lon: null, region: null, display: null };
+    await db.geoCache.upsert({ where: { query: key }, create: { query: key, ...result }, update: result });
+    return result;
+  } catch (e) {
+    log("warn", "geocode_failed", { error: errMessage(e) });
+    return null;
+  }
+}
+
+export const isBashkortostanRegion = (region: string | null | undefined) => !!region && /башкорт|bashkort/i.test(region);
+
+/**
+ * Населённый пункт в Башкортостане? По геокодеру: true / false; null — не удалось проверить (сеть).
+ * Используется импортом, когда пункта нет во встроенном справочнике (сёла).
+ */
+export async function settlementInBashkortostan(city: string): Promise<boolean | null> {
+  const r = await geocode(`${city}, Россия`);
+  if (!r) return null;
+  if (!r.found) return false;
+  return isBashkortostanRegion(r.region);
+}
+
+/**
+ * Фоновая задача: координаты площадкам без них — по адресу, иначе по названию площадки в городе.
+ * За проход — не больше limit площадок (каждая — 1–2 запроса по 1,1 с); площадка помечается, даже если не найдено.
+ */
+export async function geocodeVenues(limit = 5) {
+  const venues = await db.venue.findMany({ where: { lat: null, geocodedAt: null }, take: limit });
+  let found = 0;
+  for (const v of venues) {
+    // Сначала адрес, потом площадка по названию; в сёлах и посёлках (не в 21 городе) — запасной вариант: центр
+    // населённого пункта, там это близко к правде. В городах центр — плохая точка, оставляем без координат.
+    const town = RB_SETTLEMENTS.slice(0, 21).some((c) => normalizeTitle(c) === normalizeTitle(v.city));
+    const queries = [v.address ? `${v.address}, ${v.city}, Башкортостан` : null, `${v.name}, ${v.city}, Башкортостан`, town ? null : `${v.city}, Башкортостан`].filter(Boolean) as string[];
+    let hit: GeoResult | null = null;
+    for (const q of queries) {
+      const r = await geocode(q);
+      if (r === null) return found; // сеть недоступна — попробуем в следующий раз, не помечая площадку
+      if (r.found && isBashkortostanRegion(r.region)) {
+        hit = r;
+        break;
+      }
+    }
+    await db.venue.update({ where: { id: v.id }, data: { geocodedAt: new Date(), ...(hit ? { lat: hit.lat, lon: hit.lon } : {}) } });
+    if (hit) found++;
+  }
+  if (venues.length) log("info", "geocode_venues", { checked: venues.length, found });
+  return found;
+}

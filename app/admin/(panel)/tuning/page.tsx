@@ -70,6 +70,14 @@ export default async function AdminTuning() {
               </div>
             </More>
           ))}
+          <More title="Населённые пункты РБ" hint="сёла сверх встроенного справочника" open={tuning.extraSettlements.length > 0}>
+            <Field
+              label="Дополнительные населённые пункты"
+              hint="Импорт принимает только события в Башкортостане: 21 город и районные центры встроены, остальное — пропускается как «вне РБ». Впишите сёла РБ, где бывают события, — по одному в строке."
+            >
+              <Textarea name="extraSettlements" rows={4} defaultValue={tuning.extraSettlements.join("\n")} placeholder={"Новые Карамалы\nКрасный Ключ"} />
+            </Field>
+          </More>
           <More title="Тексты помощника" hint="уточняющий вопрос и кнопки" open={textsChanged}>
             <Field label="Уточняющий вопрос" hint="Задаётся, когда в запросе нет ни даты, ни жанра, ни бюджета. Только для русской версии.">
               <Textarea name="clarifyText" defaultValue={tuning.clarifyText} placeholder={CLARIFY_TEXT} />

@@ -93,6 +93,9 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
             <Link href="/docs/widget" className="hover:text-stone-900">
               {tr(lang, "widgetBuilder")}
             </Link>
+            <Link href="/feedback" className="hover:text-stone-900">
+              {tr(lang, "feedbackLink")}
+            </Link>
           </div>
         </div>
         <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 pb-6 text-xs sm:flex-row sm:items-start sm:justify-between">

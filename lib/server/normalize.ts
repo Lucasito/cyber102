@@ -165,8 +165,8 @@ export function normalizeCity(input: string, known: string[]): string {
 
 /**
  * Населённые пункты Республики Башкортостан: 21 город и районные центры. Афиша — только о событиях в РБ:
- * регион проверяется по площадке сеанса. Населённого пункта нет в списке (село, опечатка или другой регион) —
- * карточка не отклоняется, а уходит в модерацию.
+ * регион проверяется по площадке сеанса, события вне РБ импорт пропускает. Сёла сверх списка добавляются в
+ * админке («Тонкая настройка» → «Населённые пункты РБ»).
  */
 export const RB_SETTLEMENTS = [
   // города
@@ -180,9 +180,9 @@ export const RB_SETTLEMENTS = [
   "Николо-Березовка", "Павловка", "Нурлино", "Серафимовский", "Чесноковка", "Зубово",
 ];
 
-export function inBashkortostan(city: string) {
+export function inBashkortostan(city: string, extra: string[] = []) {
   const n = normalizeTitle(city);
-  return RB_SETTLEMENTS.some((c) => normalizeTitle(c) === n);
+  return [...RB_SETTLEMENTS, ...extra].some((c) => normalizeTitle(c) === n);
 }
 
 /** Возраст «12+», «6 +», 16 → число; допустимые значения ТЗ: 0, 6, 12, 16, 18. */

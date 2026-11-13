@@ -58,7 +58,8 @@ export async function saveEvent(_: ActionState, f: FormData): Promise<ActionStat
       const venue =
         inCity.find((v) => normalizeTitle(v.name) === normalizeTitle(venueName)) ??
         (await tx.venue.create({ data: { name: venueName, city, address: text(f, "address") || null } }));
-      if (text(f, "address") && venue.address !== text(f, "address")) await tx.venue.update({ where: { id: venue.id }, data: { address: text(f, "address") } });
+      // Новый адрес — координаты найдутся заново фоновой задачей
+      if (text(f, "address") && venue.address !== text(f, "address")) await tx.venue.update({ where: { id: venue.id }, data: { address: text(f, "address"), lat: null, lon: null, geocodedAt: null } });
       const before = id ? await tx.event.findUniqueOrThrow({ where: { id } }) : null;
       const rescheduled = before && before.startsAt.getTime() !== startsAt.getTime();
       const data = {
@@ -201,4 +202,14 @@ export async function importFile(_: ImportState, f: FormData): Promise<ImportSta
   } catch (e) {
     return { ok: false, message: e instanceof Error ? e.message : String(e) };
   }
+}
+
+// ── Обращения ────────────────────────────────────────────────────────────────
+
+export async function setFeedbackStatus(id: string, status: "new" | "done") {
+  return change(async (login) => {
+    await db.feedback.update({ where: { id }, data: { status, handledBy: status === "done" ? login : null } });
+    await audit({ userLogin: login, action: status === "done" ? "feedback_done" : "feedback_reopen", entity: "feedback", entityId: id, summary: status === "done" ? "Обращение обработано" : "Обращение возвращено в новые" });
+    return status === "done" ? "Отмечено как обработанное" : "Возвращено в новые";
+  });
 }

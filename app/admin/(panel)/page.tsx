@@ -11,13 +11,14 @@ import { getSettings } from "@/lib/server/settings";
 export default async function AdminOverview() {
   const me = await requireAdmin("MODERATOR");
   const now = new Date();
-  const [total, upcoming, demo, cancelled, users, review] = await Promise.all([
+  const [total, upcoming, demo, cancelled, users, review, feedback] = await Promise.all([
     db.event.count(),
     db.event.count({ where: { status: { notIn: ["PAST", "CANCELLED"] }, OR: [{ startsAt: { gte: now } }, { endsAt: { gte: now } }] } }),
     db.event.count({ where: { sources: { some: { source: DEMO_SOURCE } } } }),
     db.event.count({ where: { status: "CANCELLED", startsAt: { gte: now } } }),
     db.botUser.groupBy({ by: ["platform"], _count: true }),
     db.event.count({ where: { needsReview: true, status: { not: "PAST" } } }),
+    db.feedback.count({ where: { status: "new" } }),
   ]);
   const botUsers = (p: string) => users.find((u) => u.platform === p)?._count ?? 0;
 
@@ -28,6 +29,7 @@ export default async function AdminOverview() {
 
   // Что требует внимания администратора — со ссылкой на нужный раздел
   const todo: { text: string; href: string }[] = [];
+  if (feedback) todo.push({ text: `${feedback} новых обращений: заявки организаторов, уточнения, вопросы`, href: "/admin/feedback" });
   if (review) todo.push({ text: `${review} спорных карточек ждут модерации — на сайте их не видно`, href: "/admin/moderation" });
   if (isAdmin) {
     if (!ai?.enabled || !provider) todo.push({ text: "ИИ-помощник выключен или не настроен — работает обычный поиск по правилам", href: "/admin/ai" });
