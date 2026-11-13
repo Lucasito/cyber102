@@ -144,7 +144,7 @@ export const DEFAULT_BOT_GREETING =
  * от настроек в админке: опрос не идёт, webhook отвечает 404, ссылки на ботов на сайте скрыты,
  * напоминания в мессенджеры не отправляются. Чтобы включить — поставить false.
  */
-export const BOTS_PAUSED = true;
+export const BOTS_PAUSED = false;
 
 export async function maxToken() {
   if (BOTS_PAUSED) return "";
