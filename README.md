@@ -97,6 +97,7 @@ npm run dev                   # http://localhost:3000
 | `npm run db:up` / `db:migrate` / `db:deploy` | Локальная БД, миграции |
 | `npm run seed:demo` (`-- --clear`) | Загрузить (удалить) тестовые события |
 | `npm run ai:check [-- "вопрос"]` | Проверить подключение ИИ |
+| `npm run eval` | Прогнать контрольный набор запросов к агенту, отчёт — `eval/report.md` |
 | `npm run logo:export` | PNG логотипа из `public/brand/logo.svg` |
 | `bash scripts/deploy.sh` | Деплой на сервер (Git Bash) |
 

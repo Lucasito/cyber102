@@ -17,6 +17,7 @@ export const STEP_LABELS: Record<string, string> = {
   search: "Поиск по базе",
   relax: "Ослабление условия",
   explain: "Объяснение",
+  status: "Статус события",
 };
 
 export const RELAX_LABELS: Record<string, string> = { dates: "даты", category: "жанр", city: "город" };

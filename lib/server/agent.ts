@@ -185,6 +185,12 @@ async function agentCore(history: ChatMessage[], lang: Lang, { noAi, steps }: { 
   const now = new Date();
   const userMsgs = history.filter((m) => m.role === "user");
   const last = userMsgs.at(-1)?.content ?? "";
+  // «Отменили ли спектакль „Кармен“?» — статус отвечает код по записи базы, без модели
+  const status = await statusAnswer(last);
+  if (status) {
+    steps.push({ step: "status", title: status.title, found: status.ids.length, statuses: status.statuses, eventIds: status.ids });
+    return { text: status.text, events: status.events, suggestions: followupSuggestions };
+  }
   const dialog = history.map((m) => `${m.role === "user" ? "Пользователь" : "Помощник"}: ${m.content}`).join("\n");
   // ИИ недоступен (перегрузка, сбой) — не падаем: условия разберут правила ниже
   let rawIntent: unknown = {};
@@ -223,8 +229,9 @@ async function agentCore(history: ChatMessage[], lang: Lang, { noAi, steps }: { 
   const parsed = eventFilterSchema.safeParse({ ...merged, limit: T.agentEvents });
   const filter = parsed.success ? parsed.data : eventFilterSchema.parse({ limit: T.agentEvents });
 
-  // Пусто — ослабляем по очереди: жанр, даты, город. Бюджет и возраст не трогаем — это жёсткие условия
-  const relaxSteps = ["dates", "category", "city"] as const;
+  // Пусто — ослабляем по очереди: даты, жанр, город. Бюджет и возраст не трогаем — это жёсткие условия.
+  // Жанр, который угадала модель (в репликах его нет — «с ребёнком» → «детям»), снимаем первым
+  const relaxSteps = rules.category ? (["dates", "category", "city"] as const) : (["category", "dates", "city"] as const);
   let current = filter;
   t0 = Date.now();
   let { items } = await searchEvents(current);
@@ -297,6 +304,56 @@ async function agentCore(history: ChatMessage[], lang: Lang, { noAi, steps }: { 
   steps.push({ step: "explain", ai: explainedByAi, ms: Date.now() - t0, eventIds: items.map((e) => e.id) });
   const text = fixRelativeDays(explanation, items);
   return { text: note ? `${note} ${text}` : text, events: items, filter: current, suggestions: followupSuggestions, relaxed: relaxed.length > 0, degraded };
+}
+
+// ───────── Вопрос о статусе события ─────────
+
+const STATUS_QUESTION = /отмен|перенес|перенос|состоится ли|в силе ли|не отменили/i;
+const KIND_WORDS = "спектакл[ьяю]?|концерт[аы]?|выставк[аиу]|лекци[июя]|фестивал[ья]|показ|экскурси[июя]|мероприяти[ея]|событи[ея]";
+
+/** Название из вопроса: в кавычках или после слова «спектакль», «концерт»… */
+function statusTitle(text: string) {
+  const quoted = text.match(/[«"„“]([^»"“”]{2,80})[»"“”]/);
+  if (quoted) return quoted[1].trim();
+  const after = text.match(new RegExp(`(?:${KIND_WORDS})\\s+(.{2,60}?)(?:\\s+(?:\\d|в\\s|на\\s|сегодня|завтра)|[?.!]|$)`, "i"));
+  return after?.[1].trim() || null;
+}
+
+const fmtDay = (d: Date) => d.toLocaleString("ru-RU", { timeZone: TZ, day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+
+/** Ответ на «отменили ли / перенесли ли X»: по всем будущим записям с таким названием, включая отменённые. */
+async function statusAnswer(text: string): Promise<{ text: string; events: EventItem[]; title: string; statuses: string[]; ids: string[] } | null> {
+  if (!STATUS_QUESTION.test(text)) return null;
+  const title = statusTitle(text);
+  if (!title) return null;
+  const rows = await db.event.findMany({
+    where: { title: { contains: title, mode: "insensitive" }, publication: "PUBLISHED", status: { not: "PAST" } },
+    include: { venue: true, sources: { select: { url: true }, take: 1 } },
+    orderBy: { startsAt: "asc" },
+    take: 5,
+  });
+  if (!rows.length) {
+    return { text: `В афише нет события «${title}» — проверить его статус не получится. Уточните название или посмотрите сайт площадки.`, events: [], title, statuses: [], ids: [] };
+  }
+  const lines = rows.map((e) => {
+    const where = e.venue ? `, ${e.venue.name}` : "";
+    const head = `«${e.title}» (${fmtDay(e.startsAt)}${where})`;
+    const src = e.sources[0]?.url ? ` Источник: ${e.sources[0].url}` : "";
+    switch (e.status) {
+      case "CANCELLED":
+        return `${head} — отменено.${src}`;
+      case "RESCHEDULED":
+        return `${head} — перенесено${e.originalStartsAt ? ` с ${fmtDay(e.originalStartsAt)}` : ""}.${src}`;
+      case "SOLD_OUT":
+        return `${head} — состоится, но билеты проданы.${src}`;
+      default:
+        return `${head} — по данным афиши не отменено и не перенесено.${src}`;
+    }
+  });
+  // Карточки — только актуальные: отменённое не подаём как событие, на которое можно пойти
+  const actualIds = rows.filter((e) => e.status !== "CANCELLED").map((e) => e.id);
+  const events = actualIds.length ? (await searchEvents({ q: title, limit: 5, offset: 0 })).items.filter((e) => actualIds.includes(e.id)) : [];
+  return { text: lines.join("\n"), events, title, statuses: rows.map((e) => e.status), ids: rows.map((e) => e.id) };
 }
 
 /** Фильтр для трассы: без пустых полей, даты — строками. */
