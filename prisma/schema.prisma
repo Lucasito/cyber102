@@ -208,22 +208,26 @@ enum AdminRole {
 }
 
 model AdminUser {
-  id           String         @id @default(cuid())
-  login        String         @unique
-  email        String?        @unique // для восстановления пароля и приглашений
-  name         String?
-  passwordHash String
-  role         AdminRole      @default(MODERATOR)
-  active       Boolean        @default(true)
-  sessions     AdminSession[]
-  tokens       AdminToken[]
-  lastLoginAt  DateTime?
-  failedLogins Int            @default(0) // неудачных попыток подряд
-  lockedUntil  DateTime? // вход закрыт до этого времени (защита от подбора)
-  organization String? // организатор: учреждение или компания
-  events       Event[]
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id              String         @id @default(cuid())
+  login           String         @unique
+  email           String?        @unique // для восстановления пароля и приглашений
+  name            String?
+  passwordHash    String
+  role            AdminRole      @default(MODERATOR)
+  active          Boolean        @default(true)
+  sessions        AdminSession[]
+  tokens          AdminToken[]
+  lastLoginAt     DateTime?
+  failedLogins    Int            @default(0) // неудачных попыток подряд
+  lockedUntil     DateTime? // вход закрыт до этого времени (защита от подбора)
+  organization    String? // организатор: учреждение или компания
+  pendingApproval Boolean        @default(false) // заявка организатора с сайта ждёт решения модератора (вход закрыт)
+  phone           String? // заявка организатора: телефон для связи (по желанию)
+  website         String? // заявка организатора: сайт учреждения
+  applicationNote String? // заявка организатора: что будет размещать
+  events          Event[]
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
 }
 
 /**
@@ -386,7 +390,9 @@ model Source {
   updatedAt     DateTime     @updatedAt
 }
 
-/** Запись источника (элемент ленты): разобрана один раз — повторно ИИ не тратится. */
+/**
+ * Запись источника (элемент ленты): разобрана один раз — повторно ИИ не тратится.
+ */
 model SourceItem {
   id        String   @id @default(cuid())
   sourceId  String

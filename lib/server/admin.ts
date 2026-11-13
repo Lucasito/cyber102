@@ -86,6 +86,8 @@ export async function signIn(login: string, password: string): Promise<string | 
   }
   // Проверяем пароль и для несуществующего логина — чтобы по времени ответа нельзя было узнать, есть ли он
   const ok = await verifyPassword(password, user?.passwordHash ?? DUMMY_HASH);
+  // Заявка организатора ещё не одобрена: пароль верный — честно говорим, что ждать (существование логина видно только с паролем)
+  if (user && ok && user.pendingApproval) return "Заявка ещё на рассмотрении у модератора — после решения придёт письмо на указанную почту.";
   if (!user || !ok || !user.active) {
     if (user) {
       const failedLogins = user.failedLogins + 1;

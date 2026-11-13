@@ -21,6 +21,9 @@ export default async function AdminLoginPage({ searchParams }: { searchParams: P
           Забыли пароль?
         </Link>
       )}
+      <Link href="/organizers/apply" className="mt-2 block text-center text-sm text-stone-500 hover:text-stone-900">
+        Организатор событий? Подать заявку на кабинет
+      </Link>
     </AuthCard>
   );
 }

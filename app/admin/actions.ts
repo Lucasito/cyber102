@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createAdminToken, dropSessions, requireAdmin, signOut } from "@/lib/server/admin";
+import { createAdminToken, dropSessions, publicBase, requireAdmin, signOut } from "@/lib/server/admin";
 import { mailReady, mailTemplates, sendMail, sendMailQuietly } from "@/lib/server/mail";
 import { aiProviderName, chat } from "@/lib/server/ai";
 import { db } from "@/lib/server/db";
@@ -446,6 +446,36 @@ export async function sendOrganizerResetLink(id: string): Promise<ActionState> {
     const t = mailTemplates.reset(user.login, await createAdminToken(user.id, "reset"));
     await sendMail(user.email, t.subject, t.text);
     return organizerDone(`Ссылка для нового пароля отправлена на ${user.email}. Действует 1 час.`);
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Одобрить заявку организатора с сайта: вход открывается, заявителю — письмо. */
+export async function approveOrganizer(id: string): Promise<ActionState> {
+  const me = await requireAdmin("MODERATOR");
+  try {
+    const user = await db.adminUser.findUniqueOrThrow({ where: { id } });
+    if (user.role !== "ORGANIZER" || !user.pendingApproval) throw new Error("Это не заявка организатора.");
+    await db.adminUser.update({ where: { id }, data: { active: true, pendingApproval: false } });
+    await db.auditLog.create({ data: { userLogin: me.login, action: "approve", entity: "user", entityId: id, summary: `Одобрена заявка организатора ${user.login} (${user.organization ?? "—"})` } });
+    await sendMailQuietly(user.email, mailTemplates.organizerApproved(user.login, `${await publicBase()}/admin/login`));
+    return organizerDone(`Заявка ${user.organization ?? user.login} одобрена${user.email ? `, письмо отправлено на ${user.email}` : ""}.`);
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Отклонить заявку: учётная запись и персональные данные заявителя удаляются, ему — письмо. */
+export async function rejectOrganizer(id: string): Promise<ActionState> {
+  const me = await requireAdmin("MODERATOR");
+  try {
+    const user = await db.adminUser.findUniqueOrThrow({ where: { id } });
+    if (user.role !== "ORGANIZER" || !user.pendingApproval) throw new Error("Это не заявка организатора.");
+    await db.adminUser.delete({ where: { id } });
+    await db.auditLog.create({ data: { userLogin: me.login, action: "reject", entity: "user", entityId: id, summary: `Отклонена заявка организатора ${user.login} (${user.organization ?? "—"})` } });
+    await sendMailQuietly(user.email, mailTemplates.organizerRejected(user.organization ?? user.login));
+    return organizerDone(`Заявка ${user.organization ?? user.login} отклонена, данные заявителя удалены.`);
   } catch (e) {
     return fail(e);
   }

@@ -166,7 +166,9 @@ export async function runAgent(history: ChatMessage[], { lang = "ru", source, us
   const started = Date.now();
   const first = history.find((m) => m.role === "user")?.content ?? "";
   const dialogKey = userKey ? createHash("sha1").update(`${userKey}\n${first}`).digest("hex").slice(0, 16) : undefined;
-  const limit = userKey ? await costLimitHit(userKey, dialogKey!) : null;
+  // В трассу и для лимитов — только хеш: IP и id в мессенджере не хранятся (README, «Персональные данные»)
+  const userHash = userKey ? `${userKey.split(":")[0]}:${createHash("sha256").update(`afisha:${userKey}`).digest("hex").slice(0, 16)}` : undefined;
+  const limit = userHash ? await costLimitHit(userHash, dialogKey!) : null;
   const steps: TraceStep[] = limit ? [{ step: "limit", reason: limit }] : [];
 
   const { result: reply, calls } = await withAiUsage(() => agentCore(history, lang, { noAi: !!limit, steps, dialogKey, botUserId, source }));
@@ -176,7 +178,7 @@ export async function runAgent(history: ChatMessage[], { lang = "ru", source, us
   if (!source) return reply;
   const traceId = randomUUID();
   await saveTrace(traceId, source, history.filter((m) => m.role === "user").at(-1)?.content ?? "", reply, {
-    userKey,
+    userKey: userHash,
     dialogKey,
     mode,
     latencyMs: Date.now() - started,

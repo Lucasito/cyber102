@@ -33,6 +33,8 @@ export default async function AdminOverview() {
   const todo: { text: string; href: string }[] = [];
   if (feedback) todo.push({ text: `${feedback} новых обращений: заявки организаторов, уточнения, вопросы`, href: "/admin/feedback" });
   if (review) todo.push({ text: `${review} спорных карточек ждут модерации — на сайте их не видно`, href: "/admin/moderation" });
+  const applications = await db.adminUser.count({ where: { pendingApproval: true } });
+  if (applications) todo.push({ text: `${applications} заявок организаторов ждут решения`, href: "/admin/organizers" });
   if (!sources) todo.push({ text: "Ни один источник не включён — новые события сами не появятся", href: "/admin/sources" });
   if (isAdmin) {
     if (!ai?.enabled || !provider) todo.push({ text: "ИИ-помощник выключен или не настроен — работает обычный поиск по правилам", href: "/admin/ai" });

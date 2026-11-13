@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { PageTitle, Section } from "@/components/admin/blocks";
 import { ActionButton, Field, Input, SettingsForm } from "@/components/admin/ui";
-import { createOrganizer, sendOrganizerResetLink, setOrganizerActive } from "@/app/admin/actions";
+import { approveOrganizer, createOrganizer, rejectOrganizer, sendOrganizerResetLink, setOrganizerActive } from "@/app/admin/actions";
 import { requireAdmin } from "@/lib/server/admin";
 import { db } from "@/lib/server/db";
 import { mailReady } from "@/lib/server/mail";
@@ -9,9 +9,14 @@ import { mailReady } from "@/lib/server/mail";
 /** Организаторы: приглашает и отключает модератор. Их события — в «Модерации». */
 export default async function Organizers() {
   await requireAdmin("MODERATOR");
-  const [users, mail] = await Promise.all([
+  const [applications, users, mail] = await Promise.all([
     db.adminUser.findMany({
-      where: { role: "ORGANIZER" },
+      where: { role: "ORGANIZER", pendingApproval: true },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, login: true, name: true, email: true, phone: true, website: true, organization: true, applicationNote: true, createdAt: true },
+    }),
+    db.adminUser.findMany({
+      where: { role: "ORGANIZER", pendingApproval: false },
       orderBy: [{ active: "desc" }, { login: "asc" }],
       select: { id: true, login: true, name: true, email: true, organization: true, active: true, lastLoginAt: true, _count: { select: { events: true } } },
     }),
@@ -37,6 +42,48 @@ export default async function Organizers() {
           </>
         }
       />
+      <Section
+        title={`Заявки с сайта${applications.length ? ` — ${applications.length}` : ""}`}
+        desc={
+          <>
+            Организации подают заявку на странице{" "}
+            <Link href="/organizers/apply" className="underline">
+              /organizers/apply
+            </Link>
+            . Одобрили — вход открывается и уходит письмо; отклонили — учётная запись и данные заявителя удаляются.
+          </>
+        }
+      >
+        {applications.length ? (
+          <ul className="divide-y divide-black/5">
+            {applications.map((a) => (
+              <li key={a.id} className="space-y-2 py-3">
+                <div>
+                  <p className="font-medium">{a.organization}</p>
+                  <p className="text-xs text-stone-500">
+                    {a.name} · {a.email}
+                    {a.phone && ` · ${a.phone}`} · логин {a.login} · {a.createdAt.toLocaleString("ru-RU", { timeZone: "Asia/Yekaterinburg", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                  </p>
+                  {a.website && (
+                    <a href={a.website} target="_blank" rel="noreferrer" className="text-xs break-all text-[var(--brand)] underline">
+                      {a.website}
+                    </a>
+                  )}
+                  {a.applicationNote && <p className="mt-1 text-sm text-stone-600">{a.applicationNote}</p>}
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <ActionButton action={approveOrganizer.bind(null, a.id)}>Одобрить</ActionButton>
+                  <ActionButton action={rejectOrganizer.bind(null, a.id)} confirm={`Отклонить заявку «${a.organization}»? Данные заявителя будут удалены.`}>
+                    Отклонить
+                  </ActionButton>
+                </div>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="text-sm text-stone-500">Новых заявок нет.</p>
+        )}
+      </Section>
       <Section title="Пригласить организатора">
         <SettingsForm action={createOrganizer} submitLabel="Пригласить">
           <div className="grid gap-4 sm:grid-cols-2">

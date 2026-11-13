@@ -137,7 +137,13 @@ User-Agent, кеш в таблице `GeoCache` (в том числе «не н�
 с `ORGANIZER`, каждая страница проверяет роль сама. Организатор: `/admin/my` (свои события по `Event.createdById`),
 `/admin/my/new`, `/admin/my/import` — действия `app/admin/organizer-actions.ts` идут через `importRows` с `review`
 («от организатора …») и `createdById`. Модератор приглашает и отключает организаторов (`/admin/organizers`,
-действия в `app/admin/actions.ts` работают только с ролью `ORGANIZER`).
+действия в `app/admin/actions.ts` работают только с ролью `ORGANIZER`). Самостоятельная заявка — `/organizers/apply`
+(`app/(site)/organizers/apply/actions.ts`, защита как у обратной связи): учётная запись `ORGANIZER` с
+`active: false, pendingApproval: true`; `signIn` при верном пароле отвечает «заявка на рассмотрении»; модератор
+одобряет (`approveOrganizer`) или отклоняет — с удалением записи (`rejectOrganizer`).
+
+В трассах (`QueryLog.userKey`) идентификатор пользователя — только хеш `ip:…` / `telegram:…` (sha256 с солью, 16
+знаков): лимиты стоимости работают, а IP и id мессенджера не хранятся.
 
 ## Поиск (`lib/server/events.ts`)
 
