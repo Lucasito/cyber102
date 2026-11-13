@@ -95,7 +95,8 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
             </Link>
           </div>
         </div>
-        <div className="mx-auto max-w-6xl px-4 pb-6 text-xs">
+        <div className="mx-auto flex max-w-6xl flex-col gap-2 px-4 pb-6 text-xs sm:flex-row sm:items-start sm:justify-between">
+          <p className="max-w-3xl text-stone-500">{tr(lang, "disclaimer")}</p>
           <Link href="/admin/login" rel="nofollow" className="text-stone-400 hover:text-stone-700">
             {tr(lang, "adminLogin")}
           </Link>

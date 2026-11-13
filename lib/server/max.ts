@@ -114,7 +114,7 @@ export async function handleMaxUpdate(update: MaxUpdate) {
   const greeting = (await getSettings("max")).greeting || DEFAULT_BOT_GREETING;
   if (update.update_type === "bot_started" && "user" in update) {
     const userId = String(update.user.user_id);
-    await touchBotUser("max", userId, update.user.name ?? update.user.first_name ?? null);
+    await touchBotUser("max", userId);
     await sendMaxReply(userId, greetingReply(greeting));
     return;
   }
@@ -136,7 +136,7 @@ export async function handleMaxUpdate(update: MaxUpdate) {
   typing();
   const timer = chatId != null ? setInterval(typing, 4500) : null;
   try {
-    await sendMaxReply(userId, await botAnswer("max", userId, sender.name ?? sender.first_name ?? null, text, greeting));
+    await sendMaxReply(userId, await botAnswer("max", userId, text, greeting));
   } finally {
     if (timer) clearInterval(timer);
   }

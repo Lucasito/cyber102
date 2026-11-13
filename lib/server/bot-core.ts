@@ -1,6 +1,6 @@
 import "server-only";
 import { CLARIFY_SUGGESTIONS, runAgent } from "./agent";
-import { AiError, aiConfigured, type ChatMessage } from "./ai";
+import { AiError, type ChatMessage } from "./ai";
 import { logQuery } from "./analytics";
 import { db } from "./db";
 import { TZ } from "./events";
@@ -40,13 +40,23 @@ export const MENU_BUTTONS = ["Сегодня", "На выходных", "Бес�
 
 const RESET = /^(\/start|\/new|новый поиск|начать заново|сброс)(?![а-яё\w])/i;
 
-export async function touchBotUser(platform: Platform, externalId: string, name: string | null) {
+/**
+ * Пользователь бота: только идентификатор в мессенджере. Имя не храним (ТЗ: персональные данные — минимум);
+ * у записанных раньше оно стирается при следующем сообщении.
+ */
+export async function touchBotUser(platform: Platform, externalId: string) {
   return db.botUser.upsert({
     where: { platform_externalId: { platform, externalId } },
-    create: { platform, externalId, name },
-    update: { name: name ?? undefined, lastSeenAt: new Date() },
+    create: { platform, externalId, name: null },
+    update: { name: null, lastSeenAt: new Date() },
   });
 }
+
+/** Пометка в приветствии: сервис не является официальным сервисом министерства (ТЗ, «красные линии»). */
+export const BOT_DISCLAIMER = "Сервис неофициальный: события — из открытых источников, у каждого есть ссылка на источник.";
+/** Под подборкой: ответ построен по данным афиши, а не «мнению модели» (ТЗ 6.4). */
+const DATA_NOTE = "Подборка — из афиши, подробности и источник — по кнопкам.";
+const DEGRADED_NOTE = "ИИ сейчас недоступен — подобрал обычным поиском по вашим условиям.";
 
 /** Команда «/today» (или «/today@bot») → текст запроса. Служебные команды возвращаются как есть. */
 function commandToQuery(text: string) {
@@ -59,7 +69,7 @@ function commandToQuery(text: string) {
 
 /** Приветствие с меню. */
 export function greetingReply(greeting?: string): BotReply {
-  return { text: greeting || DEFAULT_BOT_GREETING, links: [], suggestions: MENU_BUTTONS.filter((b) => b !== "Новый поиск") };
+  return { text: `${greeting || DEFAULT_BOT_GREETING}\n\n${BOT_DISCLAIMER}`, links: [], suggestions: MENU_BUTTONS.filter((b) => b !== "Новый поиск") };
 }
 
 const fmtWhen = (d: Date) => d.toLocaleString("ru-RU", { timeZone: TZ, weekday: "short", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
@@ -104,8 +114,8 @@ async function listReminders(botUserId: string): Promise<BotReply> {
 
 // ───────── Ответ на сообщение ─────────
 
-export async function botAnswer(platform: Platform, externalId: string, name: string | null, rawText: string, greeting?: string): Promise<BotReply> {
-  const user = await touchBotUser(platform, externalId, name);
+export async function botAnswer(platform: Platform, externalId: string, rawText: string, greeting?: string): Promise<BotReply> {
+  const user = await touchBotUser(platform, externalId);
   const text = commandToQuery(rawText.trim()).slice(0, 1000);
 
   // Новый поиск: забываем прежний диалог
@@ -126,8 +136,7 @@ export async function botAnswer(platform: Platform, externalId: string, name: st
   const limited = await rateLimit(`bot:${platform}:${externalId}`, "user");
   if (limited) return { text: limited.message, links: [], suggestions: [] };
 
-  const base = process.env.PUBLIC_URL ?? "";
-  if (!(await aiConfigured())) return { text: `Умный поиск временно недоступен. Вся афиша: ${base}`, links: [], suggestions: [] };
+  // Без ИИ агент работает по правилам и шаблону (резервный режим, ТЗ 7.5) — пользователю не отказываем
 
   const T = await getSettings("tuning");
   const history = [...((user.dialog as ChatMessage[] | null) ?? []), { role: "user" as const, content: text }].slice(-T.dialogMemory);
@@ -140,8 +149,9 @@ export async function botAnswer(platform: Platform, externalId: string, name: st
     });
     const events = result.events.slice(0, T.botEvents);
     const list = events.map((e) => `• ${e.title} — ${fmtWhen(e.startsAt)}, ${e.venue?.name ?? ""}`).join("\n");
+    const notes = [result.degraded ? DEGRADED_NOTE : "", DATA_NOTE].filter(Boolean).join("\n");
     return {
-      text: list ? `${result.text}\n\n${list}` : result.text,
+      text: list ? `${result.text}\n\n${list}\n\n${notes}` : result.text,
       links: events.map((e) => ({ title: e.title, url: eventUrl(e.id), eventId: e.id })),
       suggestions: result.suggestions,
     };

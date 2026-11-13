@@ -115,13 +115,12 @@ export async function telegramHandle(update: TgUpdate): Promise<ReturnType<typeo
     if (cfg.mode === "polling") void tg("answerCallbackQuery", { callback_query_id: cb.id }).catch(() => {});
   }
   if (!chat || !text || chat.type !== "private") return null;
-  const name = from?.first_name ?? from?.username ?? null;
   // «печатает…» на время ответа (статус живёт 5 с — обновляем); в режиме webhook исходящих нет
   const chatId = chat.id;
   const typing = () => void tg("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
   const timer = cfg.mode === "polling" ? (typing(), setInterval(typing, 4500)) : null;
   try {
-    const reply = await botAnswer("telegram", String(from?.id ?? chat.id), name, text, cfg.greeting);
+    const reply = await botAnswer("telegram", String(from?.id ?? chat.id), text, cfg.greeting);
     return sendMessagePayload(chat.id, reply, /^\/start/i.test(text));
   } finally {
     if (timer) clearInterval(timer);

@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   const base = process.env.PUBLIC_URL ?? "";
   const events = await db.event.findMany({
-    where: { status: { not: "PAST" } },
+    where: { status: { notIn: ["PAST", "CANCELLED"] } },
     select: { id: true, updatedAt: true },
     orderBy: { startsAt: "asc" },
     take: 5000,

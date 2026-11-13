@@ -11,7 +11,7 @@ import { quickLabel, type DictKey, type Lang } from "@/lib/i18n";
 
 type T = Record<DictKey, string>;
 /** content — что видит пользователь; send — что уходит помощнику (быстрые ответы на башкирском отправляются по-русски). */
-type Msg = { role: "user" | "assistant"; content: string; send?: string; events?: CardEvent[]; suggestions?: string[]; error?: boolean };
+type Msg = { role: "user" | "assistant"; content: string; send?: string; events?: CardEvent[]; suggestions?: string[]; error?: boolean; degraded?: boolean };
 
 /** Этапы ожидания: запросы к ИИ идут по очереди, поэтому при наплыве ответ может занять до минуты. */
 const STAGES: [number, DictKey][] = [
@@ -126,8 +126,8 @@ export function AskBox({ examples, lang, t, chatEvents = 4 }: { examples: string
         body: JSON.stringify({ messages: history, lang }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.message ?? (data.error === "ai_disabled" ? t.aiDisabled : t.aiFailed));
-      setMessages([...next, { role: "assistant", content: data.text, events: (data.events ?? []).map(toCard), suggestions: data.suggestions ?? [] }]);
+      if (!res.ok) throw new Error(data.message ?? t.aiFailed);
+      setMessages([...next, { role: "assistant", content: data.text, events: (data.events ?? []).map(toCard), suggestions: data.suggestions ?? [], degraded: !!data.degraded }]);
     } catch (e) {
       setMessages([...next, { role: "assistant", content: e instanceof Error ? e.message : t.netError, error: true }]);
     } finally {
@@ -229,6 +229,11 @@ export function AskBox({ examples, lang, t, chatEvents = 4 }: { examples: string
                   {m.content}
                 </p>
               </div>
+              {m.degraded && (
+                <p className="text-xs text-amber-800 sm:ml-10" role="note">
+                  {t.degradedNote}
+                </p>
+              )}
               {!!m.events?.length && <ChatEvents events={m.events} lang={lang} t={t} first={chatEvents} />}
               {i === lastAssistant && !loading && (
                 <div className="sm:ml-10">

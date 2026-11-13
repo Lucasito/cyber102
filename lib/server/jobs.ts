@@ -1,4 +1,5 @@
 import "server-only";
+import { Prisma } from "@/generated/prisma/client";
 import { db } from "./db";
 import { TZ } from "./events";
 import { BOTS_PAUSED, getSettings } from "./settings";
@@ -6,6 +7,7 @@ import { BOTS_PAUSED, getSettings } from "./settings";
 // Фоновые задачи (запуск — instrumentation.ts): раз в минуту.
 //  • Прошедшие события получают статус PAST — в API и админке статус соответствует действительности.
 //  • Отправка напоминаний из ботов.
+//  • Раз в час — очистка по срокам хранения (RETENTION).
 
 const MINUTE = 60_000;
 
@@ -61,6 +63,24 @@ export async function sendDueReminders() {
   }
 }
 
+/** Сроки хранения (ТЗ, раздел 10: персональные данные — минимум, срок хранения указан в README). */
+export const RETENTION = { dialogDays: 30, queryLogDays: 180 } as const;
+let lastPurge = 0;
+
+/** Раз в час: диалоги неактивных пользователей ботов, старые запросы аналитики, истёкшие сессии и ссылки из писем. */
+export async function purgeOldData() {
+  if (Date.now() - lastPurge < 60 * MINUTE) return;
+  lastPurge = Date.now();
+  const day = 86_400_000;
+  const now = new Date();
+  await db.$transaction([
+    db.botUser.updateMany({ where: { lastSeenAt: { lt: new Date(Date.now() - RETENTION.dialogDays * day) }, NOT: { dialog: { equals: Prisma.DbNull } } }, data: { dialog: Prisma.DbNull } }),
+    db.queryLog.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - RETENTION.queryLogDays * day) } } }),
+    db.adminSession.deleteMany({ where: { expiresAt: { lt: now } } }),
+    db.adminToken.deleteMany({ where: { expiresAt: { lt: now } } }),
+  ]);
+}
+
 let started = false;
 export function startJobs() {
   if (started) return;
@@ -68,6 +88,7 @@ export function startJobs() {
   const tick = async () => {
     await markPastEvents().catch((e) => console.error("[jobs] статусы:", e instanceof Error ? e.message : e));
     await sendDueReminders().catch((e) => console.error("[jobs] напоминания:", e instanceof Error ? e.message : e));
+    await purgeOldData().catch((e) => console.error("[jobs] очистка:", e instanceof Error ? e.message : e));
   };
   setTimeout(tick, 15_000); // после старта — дать подняться ботам
   setInterval(tick, MINUTE);

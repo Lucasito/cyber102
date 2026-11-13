@@ -13,7 +13,7 @@ export default async function AdminOverview() {
   const now = new Date();
   const [total, upcoming, demo, cancelled, users] = await Promise.all([
     db.event.count(),
-    db.event.count({ where: { status: { not: "PAST" }, OR: [{ startsAt: { gte: now } }, { endsAt: { gte: now } }] } }),
+    db.event.count({ where: { status: { notIn: ["PAST", "CANCELLED"] }, OR: [{ startsAt: { gte: now } }, { endsAt: { gte: now } }] } }),
     db.event.count({ where: { sources: { some: { source: DEMO_SOURCE } } } }),
     db.event.count({ where: { status: "CANCELLED", startsAt: { gte: now } } }),
     db.botUser.groupBy({ by: ["platform"], _count: true }),
