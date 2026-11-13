@@ -22,4 +22,4 @@ export const STEP_LABELS: Record<string, string> = {
   ask_age: "Вопрос о возрасте",
 };
 
-export const RELAX_LABELS: Record<string, string> = { near: "рядом с центром", dates: "даты", category: "жанр", city: "город" };
+export const RELAX_LABELS: Record<string, string> = { q: "название", near: "рядом с центром", dates: "даты", category: "жанр", city: "город" };

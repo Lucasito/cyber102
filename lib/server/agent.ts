@@ -86,7 +86,7 @@ const PHRASES = {
       "Подскажите, чтобы подобрать точнее: когда хотите пойти, с кем и что ближе — театр, концерт, выставка? Можно коротко, например: «в субботу, с ребёнком, театр».",
     hello: "Здравствуйте! Я подбираю события из афиши культуры Башкортостана.",
     nothing: "В афише пока нет подходящих событий. Попробуйте изменить бюджет или возраст.",
-    relaxed: { near: "Рядом с центром", dates: "На эти даты", category: "В этом жанре", city: "В этом городе" },
+    relaxed: { q: "По этому названию", near: "Рядом с центром", dates: "На эти даты", category: "В этом жанре", city: "В этом городе" },
     relaxedTail: "ничего не нашлось — вот ближайшее.",
     noMore: "Других событий по этим условиям в афише нет. Можно изменить дату, бюджет или жанр.",
     askAge: "Сколько лет ребёнку? Подберу точнее.",
@@ -97,7 +97,7 @@ const PHRASES = {
       "Яҡшыраҡ һайлау өсөн әйтегеҙ әле: ҡасан барырға теләйһегеҙ, кем менән һәм нимә ҡыҙыҡлыраҡ — театр, концерт, күргәҙмә? Ҡыҫҡа ғына яҙырға мөмкин, мәҫәлән: «шәмбе, бала менән, театр».",
     hello: "Һаумыһығыҙ! Мин Башҡортостан мәҙәниәте афишаһынан саралар һайлайым.",
     nothing: "Афишала әлегә тап килгән саралар юҡ. Бюджетты йәки йәште үҙгәртеп ҡарағыҙ.",
-    relaxed: { near: "Үҙәк янында", dates: "Был көндәргә", category: "Был жанрҙа", city: "Был ҡалала" },
+    relaxed: { q: "Был исем буйынса", near: "Үҙәк янында", dates: "Был көндәргә", category: "Был жанрҙа", city: "Был ҡалала" },
     relaxedTail: "бер нәмә лә табылманы — бына иң яҡындары.",
     noMore: "Был шарттар буйынса афишала башҡа саралар юҡ. Көндө, бюджетты йәки жанрҙы үҙгәртергә мөмкин.",
     askAge: "Балаға нисә йәш? Теүәлерәк һайлармын.",
@@ -250,9 +250,12 @@ async function agentCore(
 
   // Пусто — ослабляем по очереди: «рядом», даты, жанр, город. Бюджет и возраст не трогаем — это жёсткие условия.
   // Жанр, который угадала модель (в репликах его нет — «с ребёнком» → «детям»), снимаем первым
-  const relaxSteps = rules.category ? (["near", "dates", "category", "city"] as const) : (["near", "category", "dates", "city"] as const);
+  // Название, которое модель угадала сама (в правилах его нет), снимаем первым — оно не должно обнулять выдачу
+  const head = rules.q ? (["near"] as const) : (["q", "near"] as const);
+  const relaxSteps = rules.category ? ([...head, "dates", "category", "city"] as const) : ([...head, "category", "dates", "city"] as const);
   // «А ещё» — без уже показанных в этом диалоге
   const exclude = new Set(follow?.exclude ?? []);
+  const strictMore = !!follow && exclude.size > 0 && follow.kinds.every((k) => k === "more" || k === "otherDay" || k === "cheaper");
   const find = async (f: EventFilter) => {
     const r = await searchEvents({ ...f, limit: f.limit + exclude.size });
     return { items: r.items.filter((e) => !exclude.has(e.id)).slice(0, f.limit) };
@@ -264,6 +267,9 @@ async function agentCore(
   const relaxed: (typeof relaxSteps)[number][] = [];
   for (const key of relaxSteps) {
     if (items.length) break;
+    // Чистые «а ещё», «в другой день»: условия не ослабляем — нет новых, так и говорим (P.noMore).
+    // «Похожее», «ближе к центру» — ослабляем как обычно, с пометкой
+    if (strictMore && key !== "near") break;
     const has = key === "dates" ? current.dateFrom || current.dateTo : current[key];
     if (!has) continue;
     current =
@@ -399,6 +405,8 @@ async function followUp(text: string, dialogKey: string, merged: Record<string, 
   }
   const exclude = kinds.some((k) => k === "more" || k === "otherDay" || k === "similar") ? shown : [];
   if (kinds.includes("otherDay")) unset.push("dateFrom", "dateTo");
+  // «Похожее» — по жанру, а не по названиям показанного (модель любит подставлять их в q)
+  if (kinds.includes("similar")) unset.push("q");
   if (kinds.includes("similar") && !merged.category && !set.category) {
     const counts = new Map<string, number>();
     for (const e of prevEvents) if (e.category) counts.set(e.category.slug, (counts.get(e.category.slug) ?? 0) + 1);
