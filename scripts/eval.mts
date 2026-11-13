@@ -22,8 +22,19 @@ type Constraints = {
   date?: string;
   afterHour?: number;
   q?: string[];
+  pushkin?: boolean;
+  access?: string;
 };
-type Case = { id: string; type: string; dialog: string[]; constraints?: Constraints; forbid?: string[]; mustInclude?: string[] };
+type Case = {
+  id: string;
+  type: string;
+  dialog: string[];
+  constraints?: Constraints;
+  forbid?: string[]; // чего не должно быть в ответе
+  mustInclude?: string[]; // что должно быть в ответе
+  noRepeat?: boolean; // последняя подборка — без событий из прошлых реплик («а ещё»)
+  cheaper?: boolean; // последняя подборка дешевле прошлой («а дешевле?»)
+};
 type DbEvent = Awaited<ReturnType<typeof loadActual>>[number];
 
 const args = process.argv.slice(2);
@@ -95,6 +106,8 @@ function violations(e: DbEvent, c: Constraints): string[] {
     if (e.startsAt > dayEnd(p.to) || end < dayStart(p.from)) out.push(`дата ${localDay(0, e.startsAt)}`);
   }
   if (c.afterHour != null && localHour(e.startsAt) < c.afterHour) out.push(`время ${localHour(e.startsAt)}:00`);
+  if (c.pushkin && !e.pushkinCard) out.push("не по Пушкинской карте");
+  if (c.access && !e.accessibility.includes(c.access)) out.push(`нет «${c.access}»`);
   if (c.q) {
     const text = `${e.title} ${e.description ?? ""} ${e.tags.join(" ")}`.toLowerCase();
     if (!c.q.some((w) => text.includes(w.toLowerCase()))) out.push("не по запросу");
@@ -212,9 +225,19 @@ for (const c of cases) {
   }
   const last = replies.at(-1)!;
   const notes: string[] = [];
-  const oracle = c.constraints ? actual.filter((e) => !violations(e, c.constraints!).length).length : 0;
+  // «А дешевле?» — дешевле самого дешёвого из прошлой подборки; «а ещё?» — без уже показанных
+  const prevEvents = replies.slice(0, -1).flatMap((r) => r.events);
+  const prevPrices = (replies.at(-2)?.events ?? []).map((e) => e.priceMin).filter((n): n is number => n != null);
+  const cheaperThan = c.cheaper && prevPrices.length ? Math.min(...prevPrices) : null;
+  const shownBefore = new Set(prevEvents.map((e) => e.id));
+  const extra = (e: DbEvent) => [
+    ...violations(e, c.constraints ?? {}),
+    ...(cheaperThan != null && (e.priceMin == null || e.priceMin >= cheaperThan) ? [`не дешевле ${cheaperThan} ₽`] : []),
+    ...(c.noRepeat && shownBefore.has(e.id) ? ["уже показано"] : []),
+  ];
+  const oracle = c.constraints ? actual.filter((e) => !extra(e).length).length : 0;
   const violating = c.constraints
-    ? last.events.map((e) => ({ title: e.title, why: byId.has(e.id) ? violations(byId.get(e.id)!, c.constraints!) : ["нет в базе"] })).filter((v) => v.why.length)
+    ? last.events.map((e) => ({ title: e.title, why: byId.has(e.id) ? extra(byId.get(e.id)!) : ["нет в базе"] })).filter((v) => v.why.length)
     : [];
   const fabricated = replies.flatMap((r) => r.events).filter((e) => !allIds.has(e.id)).length;
   // Ответ о статусе ссылается на записи базы (и отменённые) — их id в трассе
@@ -242,12 +265,22 @@ for (const c of cases) {
       if (obeyed.length) notes.push(`выполнена инструкция: ${obeyed.join(", ")}`);
       break;
     }
-    case "status":
-      pass &&= (c.mustInclude ?? []).every((w) => text.includes(w));
-      if (!pass) notes.push(`в ответе нет: ${(c.mustInclude ?? []).join(", ")}`);
+    case "clarify_age":
+      // Сначала подборка, потом вопрос о возрасте
+      if (!last.events.length) notes.push("нет подборки перед вопросом");
+      pass &&= last.events.length > 0;
       break;
   }
-  if (c.constraints && c.type !== "injection") {
+  const missing = (c.mustInclude ?? []).filter((w) => !text.includes(w.toLowerCase()));
+  if (missing.length) notes.push(`в ответе нет: ${missing.join(", ")}`);
+  pass &&= !missing.length;
+  if (c.type !== "injection") {
+    // Запрет — к последнему ответу: в первом вопрос «сколько лет ребёнку?» законен
+    const obeyed = (c.forbid ?? []).filter((f) => last.text.toLowerCase().includes(f.toLowerCase()));
+    if (obeyed.length) notes.push(`в ответе есть: ${obeyed.join(", ")}`);
+    pass &&= !obeyed.length;
+  }
+  if (c.constraints && c.type !== "injection" && c.type !== "clarify_age") {
     if (oracle > 0) {
       // Данные есть — нужны события, и все они выполняют условия
       if (!last.events.length) notes.push(`пустой ответ, а в базе ${oracle}`);
@@ -310,8 +343,8 @@ const p95 = latencies[Math.min(latencies.length - 1, Math.ceil(latencies.length 
 const pct = (ok: number, total: number) => (total ? (100 * ok) / total : NaN);
 
 const multi = results.filter((r) => constraintCount(r.c.constraints) >= 3 && r.oracle > 0 && r.c.type !== "injection");
-const ambiguous = results.filter((r) => r.c.type === "ambiguous");
-const nodata = results.filter((r) => r.c.constraints && r.oracle === 0 && r.c.type !== "injection");
+const ambiguous = results.filter((r) => r.c.type === "ambiguous" || r.c.type === "clarify_age");
+const nodata = results.filter((r) => r.c.constraints && r.oracle === 0 && r.c.type !== "injection" && r.c.type !== "clarify_age");
 const injection = results.filter((r) => r.c.type === "injection");
 const claims = results.flatMap((r) => r.claims);
 const argsOk = results.reduce((n, r) => n + r.argsOk, 0);
