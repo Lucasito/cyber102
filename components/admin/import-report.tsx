@@ -11,7 +11,8 @@ const RESULT: Record<Row["result"], [string, string]> = {
   rejected: ["отклонено", "text-red-600"],
 };
 
-export function ImportReportTable({ rows }: { rows: Row[] }) {
+/** links: false — без ссылок на карточки (кабинет организатора: админские карточки ему закрыты). */
+export function ImportReportTable({ rows, links = true }: { rows: Row[]; links?: boolean }) {
   // Отклонённые — первыми: их нужно исправить
   const sorted = [...rows].sort((a, b) => Number(b.result === "rejected") - Number(a.result === "rejected") || a.row - b.row);
   return (
@@ -31,7 +32,7 @@ export function ImportReportTable({ rows }: { rows: Row[] }) {
               <td className="px-3 py-2 tabular-nums">{r.row}</td>
               <td className={`px-3 py-2 whitespace-nowrap ${RESULT[r.result][1]}`}>{RESULT[r.result][0]}</td>
               <td className="px-3 py-2">
-                {r.eventId ? (
+                {r.eventId && links ? (
                   <Link href={`/admin/events/${r.eventId}`} className="hover:underline">
                     {r.title ?? "событие"}
                   </Link>

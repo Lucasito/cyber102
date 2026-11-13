@@ -66,10 +66,12 @@ export function SettingsForm({
   action,
   children,
   extra,
+  submitLabel = "Сохранить",
 }: {
   action: (s: ActionState, f: FormData) => Promise<ActionState>;
   children: React.ReactNode;
   extra?: React.ReactNode;
+  submitLabel?: string;
 }) {
   const [state, formAction, pending] = useActionState(action, null);
   return (
@@ -77,7 +79,7 @@ export function SettingsForm({
       {children}
       <div className="flex flex-wrap items-center gap-3 pt-1">
         <button disabled={pending} className="inline-flex items-center gap-2 rounded-full bg-stone-900 px-5 py-2 text-sm font-medium text-white hover:bg-stone-700 disabled:opacity-50">
-          {pending && <LoaderCircle className="size-4 animate-spin" />} Сохранить
+          {pending && <LoaderCircle className="size-4 animate-spin" />} {submitLabel}
         </button>
         {extra}
         <Result state={state} />

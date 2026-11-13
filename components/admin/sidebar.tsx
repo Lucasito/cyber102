@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, Bot, Brain, CalendarDays, Database, FileUp, Globe, History, LayoutDashboard, ListTree, LogOut, Rss, Mail, Map, Menu, MessageSquare, ShieldCheck, SlidersHorizontal, UserCog, Users, X } from "lucide-react";
+import { BarChart3, Bot, Brain, CalendarDays, Database, FileUp, Globe, History, Building2, FilePlus2, LayoutDashboard, ListTree, LogOut, Rss, Mail, Map, Menu, MessageSquare, ShieldCheck, SlidersHorizontal, UserCog, Users, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -17,6 +17,14 @@ type Item = {
 
 const GROUPS: { title: string; items: Item[] }[] = [
   {
+    title: "Кабинет организатора",
+    items: [
+      { href: "/admin/my", label: "Мои события", icon: CalendarDays, roles: ["ORGANIZER"] },
+      { href: "/admin/my/new", label: "Добавить событие", icon: FilePlus2, roles: ["ORGANIZER"] },
+      { href: "/admin/my/import", label: "Загрузить файл", icon: FileUp, roles: ["ORGANIZER"] },
+    ],
+  },
+  {
     title: "Работа",
     items: [
       { href: "/admin", label: "Обзор", icon: LayoutDashboard, roles: ["ADMIN", "MODERATOR"] },
@@ -24,6 +32,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
       { href: "/admin/moderation", label: "Модерация", icon: ShieldCheck, roles: ["ADMIN", "MODERATOR"] },
       { href: "/admin/import", label: "Импорт", icon: FileUp, roles: ["ADMIN", "MODERATOR"] },
       { href: "/admin/sources", label: "Источники", icon: Rss, roles: ["ADMIN", "MODERATOR"] },
+      { href: "/admin/organizers", label: "Организаторы", icon: Building2, roles: ["ADMIN", "MODERATOR"] },
       { href: "/admin/feedback", label: "Обращения", icon: MessageSquare, roles: ["ADMIN", "MODERATOR"] },
       { href: "/admin/audit", label: "Журнал", icon: History, roles: ["ADMIN", "MODERATOR"] },
       {
@@ -75,7 +84,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
         href: "/admin/profile",
         label: "Мой профиль",
         icon: UserCog,
-        roles: ["ADMIN", "MODERATOR"],
+        roles: ["ADMIN", "MODERATOR", "ORGANIZER"],
       },
     ],
   },
@@ -84,7 +93,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
 export function AdminSidebar({ login, roleLabel, role, logout }: { login: string; roleLabel: string; role: Role; logout: () => Promise<void> }) {
   const path = usePathname();
   const [open, setOpen] = useState(false);
-  const active = (href: string) => (href === "/admin" ? path === "/admin" : path.startsWith(href));
+  const active = (href: string) => (href === "/admin" || href === "/admin/my" ? path === href : path.startsWith(href));
 
   const nav = (
     <nav className="flex h-full flex-col gap-5 overflow-y-auto p-4">

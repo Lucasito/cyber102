@@ -71,6 +71,7 @@ bash scripts/deploy.sh      # из корня проекта, Git Bash
 docker logs -f afisha-app                                    # логи
 docker exec afisha-app npx tsx scripts/seed-demo.mts --allow-remote          # тестовые данные
 docker exec afisha-app npx tsx scripts/seed-demo.mts --allow-remote --clear  # удалить их
+docker exec afisha-app npx tsx scripts/seed-sources.mts --allow-remote       # начальный список источников (выключены)
 docker exec afisha-db-1 pg_dump -U afisha afisha > backup.sql                # резервная копия БД
 cd /opt/afisha && docker compose -f docker-compose.prod.yml restart app      # перезапуск
 ```

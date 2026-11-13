@@ -29,7 +29,7 @@ export default async function AdminUsersPage() {
     <>
       <PageTitle
         title="Пользователи"
-        desc={`${ROLE_LABELS.ADMIN} — все разделы, настройки и пользователи. ${ROLE_LABELS.MODERATOR} — работа с событиями: импорт, правка, модерация.`}
+        desc={`${ROLE_LABELS.ADMIN} — все разделы, настройки и пользователи. ${ROLE_LABELS.MODERATOR} — работа с событиями: импорт, правка, модерация, источники, организаторы. ${ROLE_LABELS.ORGANIZER} — только свои события: добавляет по одному или файлом, всё проходит модерацию.`}
       />
       <Section>
         <ul className="space-y-3">

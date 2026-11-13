@@ -226,7 +226,10 @@ async function emailFrom(f: FormData, exceptId?: string) {
   if (other && other.id !== exceptId) throw new Error(`Почта ${email} уже у пользователя ${other.login}.`);
   return email;
 }
-const role = (f: FormData): AdminRole => (text(f, "role") === "ADMIN" ? "ADMIN" : "MODERATOR");
+const role = (f: FormData): AdminRole => {
+  const r = text(f, "role");
+  return r === "ADMIN" ? "ADMIN" : r === "ORGANIZER" ? "ORGANIZER" : "MODERATOR";
+};
 
 /** Нельзя оставить систему без активного администратора. */
 async function assertAnotherAdmin(exceptId: string) {
@@ -395,6 +398,72 @@ export async function testMail(): Promise<ActionState> {
     const t = mailTemplates.test();
     await sendMail(user.email, t.subject, t.text);
     return { ok: true, message: `Письмо отправлено на ${user.email}` };
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+// ── Организаторы: приглашает и отключает модератор ───────────────────────────
+// Организатор добавляет события по одному или файлом; всё уходит в очередь модерации.
+
+function organizerDone(message: string): ActionState {
+  revalidatePath("/admin/organizers");
+  return { ok: true, message };
+}
+
+export async function createOrganizer(_: ActionState, f: FormData): Promise<ActionState> {
+  const me = await requireAdmin("MODERATOR");
+  try {
+    const login = text(f, "login").toLowerCase();
+    if (!LOGIN_RE.test(login)) throw new Error("Логин: 3–32 символа, латиница в нижнем регистре, цифры, точка, дефис, подчёркивание.");
+    if (await db.adminUser.findUnique({ where: { login } })) throw new Error(`Логин «${login}» уже занят.`);
+    const organization = text(f, "organization").slice(0, 200);
+    if (organization.length < 2) throw new Error("Укажите учреждение или организацию.");
+    const email = await emailFrom(f);
+    const invite = !!email && (await mailReady());
+    const password = generatePassword();
+    const user = await db.adminUser.create({
+      data: { login, email, name: text(f, "name") || null, organization, role: "ORGANIZER", passwordHash: await hashPassword(password) },
+    });
+    await db.auditLog.create({ data: { userLogin: me.login, action: "create", entity: "user", entityId: user.id, summary: `Приглашён организатор ${login} (${organization})` } });
+    if (invite && email) {
+      const t = mailTemplates.invite(login, await createAdminToken(user.id, "invite"));
+      await sendMail(email, t.subject, t.text);
+      return organizerDone(`Организатор ${login} создан, приглашение отправлено на ${email}.`);
+    }
+    return organizerDone(`Организатор ${login} создан. Пароль: ${password} — передайте его организатору, больше он не показывается.`);
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Включить или отключить организатора (отключённый сразу выходит). Только для роли «Организатор». */
+export async function setOrganizerActive(id: string, active: boolean): Promise<ActionState> {
+  const me = await requireAdmin("MODERATOR");
+  try {
+    const user = await db.adminUser.findUniqueOrThrow({ where: { id } });
+    if (user.role !== "ORGANIZER") throw new Error("Модератор управляет только организаторами.");
+    await db.$transaction([
+      db.adminUser.update({ where: { id }, data: { active, failedLogins: 0, lockedUntil: null } }),
+      ...(active ? [] : [db.adminSession.deleteMany({ where: { userId: id } })]),
+      db.auditLog.create({ data: { userLogin: me.login, action: "update", entity: "user", entityId: id, summary: `Организатор ${user.login} ${active ? "включён" : "отключён"}` } }),
+    ]);
+    return organizerDone(`Организатор ${user.login} ${active ? "включён" : "отключён"}.`);
+  } catch (e) {
+    return fail(e);
+  }
+}
+
+/** Ссылка для нового пароля организатору на почту. */
+export async function sendOrganizerResetLink(id: string): Promise<ActionState> {
+  await requireAdmin("MODERATOR");
+  try {
+    const user = await db.adminUser.findUniqueOrThrow({ where: { id } });
+    if (user.role !== "ORGANIZER") throw new Error("Модератор управляет только организаторами.");
+    if (!user.email) throw new Error("У организатора не указана почта.");
+    const t = mailTemplates.reset(user.login, await createAdminToken(user.id, "reset"));
+    await sendMail(user.email, t.subject, t.text);
+    return organizerDone(`Ссылка для нового пароля отправлена на ${user.email}. Действует 1 час.`);
   } catch (e) {
     return fail(e);
   }
