@@ -1,0 +1,12 @@
+node_modules/
+.next/
+out/
+generated/
+.env
+*.tsbuildinfo
+next-env.d.ts
+test-results/
+playwright-report/
+
+# Доступы к серверу — только локально
+psw

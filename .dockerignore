@@ -1,0 +1,8 @@
+node_modules
+.next
+generated
+.env
+.git
+psw
+test-results
+playwright-report

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#ecfccb"/>
+  <!-- Открытая сцена под гирляндой флажков. -->
+  <g stroke="#84cc16" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M132 102 Q320 180 508 102" fill="none"/>
+    <path d="M172 119 L191 155 L214 132 M247 140 L271 176 L293 146 M347 146 L369 176 L393 140 M426 132 L449 155 L468 119" fill="#84cc16"/>
+    <path d="M248 209 L320 153 L392 209Z" fill="#FFFFFF"/>
+    <path d="M254 209 H386 V282 H254Z" fill="#FFFFFF"/>
+    <rect x="240" y="282" width="160" height="18" rx="6" fill="#84cc16"/>
+    <path d="M166 300 H474 M204 265 V284 M436 265 V284"/>
+    <path d="M321 223 V264 L345 258 V217Z" fill="#84cc16"/>
+  </g>
+  <g fill="#84cc16">
+    <ellipse cx="308" cy="265" rx="15" ry="10"/>
+    <ellipse cx="332" cy="259" rx="15" ry="10"/>
+    <circle cx="204" cy="252" r="9"/>
+    <circle cx="436" cy="252" r="9"/>
+  </g>
+</svg>

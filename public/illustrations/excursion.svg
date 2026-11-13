@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#ccfbf1"/>
+  <!-- Уральские холмы и указатель в центре маршрута. -->
+  <g stroke="#2dd4bf" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M124 283 Q178 180 239 231 Q303 136 371 222 Q433 173 516 283Z" fill="#FFFFFF"/>
+    <path d="M124 283 Q198 233 260 264 Q337 220 410 265 Q464 239 516 283 V300 H124Z" fill="#2dd4bf"/>
+    <path d="M322 272 C272 279 276 292 310 300 H359 C321 286 326 283 350 276" fill="#FFFFFF" stroke="#FFFFFF"/>
+    <path d="M320 130 V264"/>
+    <path d="M263 144 H373 L395 166 L373 188 H263Z" fill="#FFFFFF"/>
+    <path d="M344 160 L352 166 L344 172" fill="none"/>
+  </g>
+  <circle cx="438" cy="135" r="23" fill="#FFFFFF"/>
+  <path d="M184 130 V150 M174 140 H194" stroke="#2dd4bf" stroke-width="8" stroke-linecap="round"/>
+</svg>

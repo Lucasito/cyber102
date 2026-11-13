@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title">
+  <title id="title">Афиша культуры Башкортостана</title>
+  <defs>
+    <linearGradient id="background" x1="0" y1="512" x2="512" y2="0" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#1565C0"/>
+      <stop offset="1" stop-color="#0B8F5A"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#background)"/>
+  <!-- Крупная маска с настоящими вырезами для небольших размеров. -->
+  <path fill="#FFFFFF" fill-rule="evenodd" d="
+    M128 157 Q256 119 384 157 C377 289 328 384 256 389 C184 384 135 289 128 157Z
+    M168 232 C168 194 222 194 224 231 Q196 219 168 232Z
+    M288 231 C290 194 344 194 344 232 Q316 219 288 231Z
+    M191 281 Q256 304 321 281 C309 352 203 352 191 281Z
+  "/>
+</svg>

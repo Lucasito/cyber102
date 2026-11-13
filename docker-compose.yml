@@ -1,0 +1,15 @@
+# Локальная разработка: только PostgreSQL. Приложение — npm run dev.
+services:
+  db:
+    image: postgres:16-alpine
+    container_name: afisha-db
+    environment:
+      POSTGRES_USER: afisha
+      POSTGRES_PASSWORD: afisha
+      POSTGRES_DB: afisha
+    ports:
+      - "127.0.0.1:5435:5432"
+    volumes:
+      - afisha-db:/var/lib/postgresql/data
+volumes:
+  afisha-db:

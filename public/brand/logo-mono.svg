@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Афиша культуры Башкортостана</title>
+  <desc id="desc">Две театральные маски, билет и семилепестковый цветок курая на прозрачном фоне.</desc>
+  <defs>
+
+    <!-- Силуэты также задают прозрачные зазоры между слоями. -->
+    <path id="front-shape" d="M112 223 Q184 176 254 183 C282 245 285 326 234 365 C182 405 122 332 112 223Z"/>
+    <path id="rear-shape" d="M239 193 Q326 188 399 237 C390 315 352 381 304 379 C274 378 250 352 239 328Z"/>
+    <g id="flower-shape">
+      <circle cx="366" cy="165" r="20"/>
+      <ellipse cx="366" cy="146" rx="10" ry="15"/>
+      <ellipse cx="366" cy="146" rx="10" ry="15" transform="rotate(51.428571 366 165)"/>
+      <ellipse cx="366" cy="146" rx="10" ry="15" transform="rotate(102.857143 366 165)"/>
+      <ellipse cx="366" cy="146" rx="10" ry="15" transform="rotate(154.285714 366 165)"/>
+      <ellipse cx="366" cy="146" rx="10" ry="15" transform="rotate(205.714286 366 165)"/>
+      <ellipse cx="366" cy="146" rx="10" ry="15" transform="rotate(257.142857 366 165)"/>
+      <ellipse cx="366" cy="146" rx="10" ry="15" transform="rotate(308.571429 366 165)"/>
+    </g>
+
+    <mask id="ticket-cutouts" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="white"/>
+      <g fill="black" stroke="black" stroke-width="8" stroke-linejoin="round">
+        <use href="#front-shape"/>
+        <use href="#rear-shape"/>
+        <use href="#flower-shape"/>
+      </g>
+    </mask>
+    <mask id="rear-cutouts" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="white"/>
+      <use href="#front-shape" fill="black" stroke="black" stroke-width="8" stroke-linejoin="round"/>
+      <g fill="black">
+        <path d="M269 253 C279 233 298 241 302 262 Q285 254 269 253Z"/>
+        <path d="M325 264 C334 242 360 248 369 279 Q348 267 325 264Z"/>
+        <path d="M283 334 C295 301 326 301 345 335 Q314 319 283 334Z"/>
+      </g>
+    </mask>
+    <mask id="front-cutouts" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="white"/>
+      <g fill="black">
+        <path d="M142 270 C139 245 171 233 183 257 Q162 259 142 270Z"/>
+        <path d="M207 251 C202 225 235 214 249 238 Q227 240 207 251Z"/>
+        <path d="M170 304 C196 307 219 288 245 286 C241 330 197 346 170 304Z"/>
+      </g>
+    </mask>
+    <mask id="kurai-center" maskUnits="userSpaceOnUse" x="0" y="0" width="512" height="512">
+      <rect width="512" height="512" fill="white"/>
+      <circle cx="366" cy="165" r="9" fill="black"/>
+    </mask>
+  </defs>
+
+  <g id="ticket" fill="#FFFFFF" mask="url(#ticket-cutouts)">
+    <!-- Полукруглый вырез на верхнем краю билета. -->
+    <path d="M267 119 L311 133 A18 18 0 0 0 345 144 L382 156 L363 222 L243 200Z"/>
+  </g>
+  <g id="kurai" fill="#FFFFFF" mask="url(#kurai-center)">
+    <use href="#flower-shape"/>
+  </g>
+  <g id="masks" fill="#FFFFFF">
+    <use href="#rear-shape" mask="url(#rear-cutouts)"/>
+    <use href="#front-shape" mask="url(#front-cutouts)"/>
+  </g>
+</svg>

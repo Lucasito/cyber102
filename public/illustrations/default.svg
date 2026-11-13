@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#d1fae5"/>
+  <circle cx="320" cy="202" r="104" fill="#FFFFFF"/>
+  <!-- Семь одинаковых лепестков курая вокруг круглой середины. -->
+  <g fill="#34d399">
+    <circle cx="320" cy="193" r="39"/>
+    <ellipse cx="320" cy="151" rx="20" ry="32"/>
+    <ellipse cx="320" cy="151" rx="20" ry="32" transform="rotate(51.428571 320 193)"/>
+    <ellipse cx="320" cy="151" rx="20" ry="32" transform="rotate(102.857143 320 193)"/>
+    <ellipse cx="320" cy="151" rx="20" ry="32" transform="rotate(154.285714 320 193)"/>
+    <ellipse cx="320" cy="151" rx="20" ry="32" transform="rotate(205.714286 320 193)"/>
+    <ellipse cx="320" cy="151" rx="20" ry="32" transform="rotate(257.142857 320 193)"/>
+    <ellipse cx="320" cy="151" rx="20" ry="32" transform="rotate(308.571429 320 193)"/>
+  </g>
+  <circle cx="320" cy="193" r="18" fill="#FFFFFF"/>
+  <g fill="none" stroke="#34d399" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M320 262 V290 M320 280 Q290 282 280 264 Q308 261 320 280 M166 300 H474"/>
+    <path d="M182 154 V174 M172 164 H192 M451 231 V251 M441 241 H461"/>
+  </g>
+  <g fill="#34d399">
+    <circle cx="444" cy="132" r="8"/>
+    <circle cx="190" cy="246" r="8"/>
+  </g>
+</svg>

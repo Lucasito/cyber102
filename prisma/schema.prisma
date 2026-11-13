@@ -1,0 +1,148 @@
+// Афиша культуры Башкортостана — черновая модель данных.
+// Уточняется после выхода полной документации задачи.
+//
+// Принципы:
+//  • Только реальные события: у каждого есть источник (sourceUrl) — выдуманных нет.
+//  • Дедупликация: dedupKey = нормализованные (название + площадка + дата начала);
+//    одно событие из нескольких источников — одна запись, источники в EventSource.
+//  • Цены в рублях целыми (Int); null — неизвестно, 0 — бесплатно.
+
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum EventStatus {
+  SCHEDULED // запланировано
+  RESCHEDULED // перенесено
+  CANCELLED // отменено
+  SOLD_OUT // билетов нет
+  PAST // прошло
+}
+
+model Category {
+  id     String  @id @default(cuid())
+  slug   String  @unique
+  name   String
+  events Event[]
+}
+
+model Venue {
+  id      String  @id @default(cuid())
+  name    String
+  city    String
+  address String?
+  lat     Float?
+  lon     Float?
+  events  Event[]
+
+  @@unique([name, city])
+  @@index([city])
+}
+
+model Event {
+  id            String        @id @default(cuid())
+  title         String
+  description   String?
+  startsAt      DateTime
+  endsAt        DateTime?
+  status        EventStatus   @default(SCHEDULED)
+  priceMin      Int?
+  priceMax      Int?
+  ageLimit      Int? // возрастное ограничение: 0, 6, 12, 16, 18
+  imageUrl      String?
+  ticketUrl     String?
+  pushkinCard   Boolean       @default(false) // можно оплатить Пушкинской картой
+  accessibility String[]      @default([]) // доступная среда: wheelchair, hearing, vision
+  dedupKey      String        @unique
+  categoryId    String?
+  category      Category?     @relation(fields: [categoryId], references: [id])
+  venueId       String?
+  venue         Venue?        @relation(fields: [venueId], references: [id])
+  sources       EventSource[]
+  reminders     Reminder[]
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  @@index([startsAt])
+  @@index([status, startsAt])
+}
+
+/**
+ * Откуда событие взято: подтверждение достоверности и основа дедупликации.
+ */
+model EventSource {
+  id         String   @id @default(cuid())
+  eventId    String
+  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  source     String // код источника: culture_rb, pushkin_card, theatre_site …
+  externalId String?
+  url        String
+  fetchedAt  DateTime @default(now())
+
+  @@unique([source, url])
+}
+
+/**
+ * Пользователь бота (MAX, Telegram) и контекст диалога с ИИ-агентом.
+ */
+model BotUser {
+  id         String     @id @default(cuid())
+  platform   String // max | telegram
+  externalId String // id пользователя в мессенджере
+  name       String?
+  dialog     Json? // последние сообщения для уточняющих вопросов агента
+  messages   Int        @default(0)
+  reminders  Reminder[]
+  createdAt  DateTime   @default(now())
+  lastSeenAt DateTime   @default(now())
+
+  @@unique([platform, externalId])
+}
+
+/**
+ * Настройки, которые меняются из админки (key — раздел: site, ai, max, telegram).
+ */
+model Setting {
+  key       String   @id
+  value     Json
+  updatedAt DateTime @updatedAt
+}
+
+/**
+ * Напоминание о событии в боте: «Напомнить» под событием → сообщение за день (или за 2 часа) до начала.
+ */
+model Reminder {
+  id        String    @id @default(cuid())
+  botUserId String
+  botUser   BotUser   @relation(fields: [botUserId], references: [id], onDelete: Cascade)
+  eventId   String
+  event     Event     @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  remindAt  DateTime
+  sentAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@unique([botUserId, eventId])
+  @@index([sentAt, remindAt])
+}
+
+/**
+ * Журнал запросов к помощнику — для аналитики в админке.
+ */
+model QueryLog {
+  id        String   @id @default(cuid())
+  source    String // site | api | max | telegram
+  text      String
+  filter    Json?
+  results   Int      @default(0)
+  clarify   Boolean  @default(false) // помощник задал уточняющий вопрос
+  relaxed   Boolean  @default(false) // точных совпадений не было, фильтр ослаблен
+  degraded  Boolean  @default(false) // ответ без ИИ (перегрузка)
+  createdAt DateTime @default(now())
+
+  @@index([createdAt])
+}

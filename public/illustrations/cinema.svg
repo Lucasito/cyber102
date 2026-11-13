@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#e2e8f0"/>
+  <circle cx="320" cy="202" r="104" fill="#FFFFFF"/>
+  <!-- Хлопушка и кинолента, без надписей. -->
+  <g stroke="#94a3b8" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M246 170 L386 116 L398 146 L258 200Z" fill="#94a3b8"/>
+    <path d="M272 160 L293 184 M310 145 L331 169 M348 131 L369 155" stroke="#FFFFFF"/>
+    <rect x="246" y="200" width="152" height="86" rx="12" fill="#94a3b8"/>
+    <path d="M178 157 V263 H213 M430 181 H464 V267 H430" fill="none"/>
+    <path d="M178 183 H192 M178 208 H192 M178 233 H192 M450 202 H464 M450 227 H464 M450 252 H464"/>
+    <path d="M166 300 H474"/>
+  </g>
+  <path d="M310 221 L310 265 L346 243Z" fill="#FFFFFF" stroke="#FFFFFF" stroke-width="8" stroke-linejoin="round"/>
+</svg>

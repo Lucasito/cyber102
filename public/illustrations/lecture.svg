@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#e0e7ff"/>
+  <circle cx="320" cy="202" r="104" fill="#FFFFFF"/>
+  <!-- Раскрытая книга на кафедре. -->
+  <g stroke="#818cf8" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M280 221 H360 L350 286 H290Z" fill="#818cf8"/>
+    <path d="M242 204 H398 V222 H242Z" fill="#818cf8"/>
+    <path d="M320 146 Q286 128 246 142 V198 Q286 184 320 204 Q354 184 394 198 V142 Q354 128 320 146Z" fill="#FFFFFF"/>
+    <path d="M320 146 V204 M264 157 Q282 151 300 158 M264 175 Q282 169 300 176 M340 158 Q358 151 376 157 M340 176 Q358 169 376 175" fill="none"/>
+    <path d="M304 286 H336 M166 300 H474 M190 158 V178 M180 168 H200 M445 224 V244 M435 234 H455"/>
+  </g>
+  <g fill="#818cf8">
+    <circle cx="437" cy="128" r="8"/>
+    <circle cx="190" cy="246" r="8"/>
+  </g>
+</svg>

@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#ffe4e6"/>
+  <!-- Сцена и занавес обрамляют центральную пару масок. -->
+  <g stroke="#fb7185" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M172 96 H468 V292 H172Z" fill="#FFFFFF"/>
+    <path d="M172 96 H242 Q244 171 184 214 L210 292 H172Z M468 96 H398 Q396 171 456 214 L430 292 H468Z" fill="#fb7185"/>
+    <path d="M158 300 H482"/>
+  </g>
+  <g fill="#fb7185">
+    <path fill-rule="evenodd" d="M318 157 Q355 152 399 175 C396 231 374 274 344 274 Q325 273 311 253 L318 157Z M335 196 Q345 178 356 198 Q345 194 335 196Z M366 201 Q379 186 387 207 Q376 201 366 201Z M332 245 Q350 212 375 249 Q353 237 332 245Z"/>
+    <path d="M238 167 Q274 141 313 146 C334 194 327 255 295 273 C263 292 239 231 238 167Z" stroke="#FFFFFF" stroke-width="8"/>
+  </g>
+  <g fill="#FFFFFF">
+    <path d="M251 200 Q261 178 274 193 Q263 194 251 200Z M285 189 Q294 168 308 185 Q295 184 285 189Z M262 229 Q285 233 309 215 C304 250 279 259 262 229Z"/>
+  </g>
+  <path d="M121 151 V171 M111 161 H131 M508 224 V244 M498 234 H518" stroke="#fb7185" stroke-width="8" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#fef3c7"/>
+  <!-- Главная картина целиком остаётся в центральной трети. -->
+  <g stroke="#fbbf24" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M268 118 L320 88 L372 118" fill="none"/>
+    <rect x="244" y="118" width="152" height="166" rx="12" fill="#FFFFFF"/>
+    <rect x="140" y="160" width="72" height="104" rx="10" fill="#FFFFFF"/>
+    <rect x="428" y="142" width="72" height="104" rx="10" fill="#FFFFFF"/>
+    <path d="M124 300 H516"/>
+  </g>
+  <g fill="#fbbf24">
+    <path d="M260 254 L297 201 L322 227 L344 201 L380 254 V268 H260Z"/>
+    <circle cx="346" cy="162" r="17"/>
+    <path d="M156 248 V213 L176 191 L196 213 V248Z"/>
+    <circle cx="464" cy="181" r="19"/>
+    <path d="M444 222 Q464 193 484 222 V230 H444Z"/>
+  </g>
+  <path d="M270 137 V168 M270 180 V184" stroke="#fbbf24" stroke-width="8" stroke-linecap="round"/>
+</svg>

@@ -1,0 +1,50 @@
+# Продакшн на общем сервере с РемЗап (/opt/remzap). Порты наружу не открываются:
+# HTTPS отдаёт Caddy РемЗапа — блок afish.* в /opt/remzap/docker/Caddyfile
+# проксирует на afisha-app:3000 через общую сеть remzap_default.
+# Запуск: docker compose -f docker-compose.prod.yml up -d --build  (из /opt/afisha)
+
+name: afisha
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: afisha
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?задайте POSTGRES_PASSWORD в .env}
+      POSTGRES_DB: afisha
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U afisha -d afisha"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    mem_limit: 256m
+    networks:
+      default:
+        aliases: [afisha-db]
+
+  # Имя сервиса НЕ «app»: Docker регистрирует имя сервиса в каждой подключённой сети, а в сети remzap_default
+  # «app» — это приложение РемЗапа. При совпадении имён трафик РемЗапа делится между двумя контейнерами.
+  afisha:
+    build: .
+    container_name: afisha-app
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      # Хост БД — уникальное имя afisha-db: «db» в общей сети remzap_default — это база РемЗапа
+      DATABASE_URL: postgresql://afisha:${POSTGRES_PASSWORD}@afisha-db:5432/afisha
+    depends_on:
+      db:
+        condition: service_healthy
+    networks: [default, remzap]
+    mem_limit: 512m
+
+networks:
+  remzap:
+    name: remzap_default
+    external: true
+
+volumes:
+  db-data:

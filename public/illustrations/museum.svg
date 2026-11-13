@@ -1,0 +1,19 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#e7e5e4"/>
+  <!-- Абстрактный музей: колонны и амфора в центральной витрине. -->
+  <g stroke="#a8a29e" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M168 132 L320 76 L472 132Z" fill="#FFFFFF"/>
+    <path d="M166 300 H474 M186 282 H454"/>
+    <rect x="192" y="152" width="32" height="130" rx="8" fill="#FFFFFF"/>
+    <rect x="416" y="152" width="32" height="130" rx="8" fill="#FFFFFF"/>
+    <path d="M184 152 H232 M408 152 H456"/>
+    <rect x="258" y="150" width="124" height="132" rx="14" fill="#FFFFFF"/>
+    <path d="M284 272 H356"/>
+  </g>
+  <g fill="none" stroke="#a8a29e" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M302 199 C273 188 273 228 298 229 M338 199 C367 188 367 228 342 229"/>
+    <path d="M306 178 H334 L330 198 C351 223 343 245 320 251 C297 245 289 223 310 198Z" fill="#a8a29e"/>
+    <path d="M308 218 Q320 224 332 218" stroke="#FFFFFF"/>
+  </g>
+  <circle cx="320" cy="112" r="9" fill="#a8a29e"/>
+</svg>

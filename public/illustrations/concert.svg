@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 360">
+  <rect width="640" height="360" fill="#ede9fe"/>
+  <circle cx="320" cy="202" r="104" fill="#FFFFFF"/>
+  <!-- Микрофон с крупной головкой и подставкой. -->
+  <g stroke="#a78bfa" stroke-width="8" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="293" y="112" width="54" height="110" rx="27" fill="#a78bfa"/>
+    <path d="M275 192 V201 A45 45 0 0 0 365 201 V192 M320 246 V288 M290 288 H350" fill="none"/>
+    <path d="M306 137 H334 M306 156 H334 M306 175 H334" stroke="#FFFFFF"/>
+    <path d="M196 186 V127 L225 121 V166 M431 249 V190 L460 184 V229" fill="none"/>
+    <path d="M166 300 H474"/>
+  </g>
+  <g fill="#a78bfa">
+    <ellipse cx="186" cy="187" rx="14" ry="10" transform="rotate(-15 186 187)"/>
+    <ellipse cx="215" cy="167" rx="14" ry="10" transform="rotate(-15 215 167)"/>
+    <ellipse cx="421" cy="250" rx="14" ry="10" transform="rotate(-15 421 250)"/>
+    <ellipse cx="450" cy="230" rx="14" ry="10" transform="rotate(-15 450 230)"/>
+    <circle cx="451" cy="116" r="8"/>
+    <circle cx="160" cy="248" r="8"/>
+  </g>
+</svg>

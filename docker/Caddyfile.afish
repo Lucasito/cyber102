@@ -1,0 +1,9 @@
+# Блок для Caddyfile РемЗапа (/opt/remzap/docker/Caddyfile и репозиторий crm_spare_parts).
+# Caddy сам получит сертификат Let's Encrypt для поддомена sslip.io.
+afish.193-47-33-213.sslip.io {
+	encode zstd gzip
+	header -Server
+	reverse_proxy afisha-app:3000 {
+		header_up X-Real-IP {remote_host}
+	}
+}
