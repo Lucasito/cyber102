@@ -64,6 +64,9 @@ export async function saveAi(_: ActionState, f: FormData): Promise<ActionState> 
       rateIpDay: Math.max(0, Number(text(f, "rateIpDay")) || 0),
       rateUserMinute: Math.max(0, Number(text(f, "rateUserMinute")) || 0),
       rateUserDay: Math.max(0, Number(text(f, "rateUserDay")) || 0),
+      priceRubPer1k: Math.max(0, Number(text(f, "priceRubPer1k").replace(",", ".")) || 0),
+      costDialogRub: Math.max(0, Number(text(f, "costDialogRub").replace(",", ".")) || 0),
+      costUserDayRub: Math.max(0, Number(text(f, "costUserDayRub").replace(",", ".")) || 0),
     });
     return done(`Сохранено. Сейчас используется: ${(await aiProviderName()) ?? "ИИ выключен"}`);
   } catch (e) {

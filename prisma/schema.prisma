@@ -179,9 +179,20 @@ model QueryLog {
   clarify   Boolean  @default(false) // помощник задал уточняющий вопрос
   relaxed   Boolean  @default(false) // точных совпадений не было, фильтр ослаблен
   degraded  Boolean  @default(false) // ответ без ИИ (перегрузка)
+  // Трасса ответа агента (ТЗ 7.4): кто спросил, режим, задержка, токены, стоимость, события-основания, шаги
+  userKey   String? // ip:… — сайт и API; max:… / telegram:… — пользователь бота
+  dialogKey String? // диалог: хеш пользователя и первой реплики — для лимита стоимости на диалог
+  mode      String   @default("ai") // ai — с ИИ; mixed — часть шагов без ИИ; rules — без ИИ; limit — превышен лимит стоимости
+  latencyMs Int      @default(0)
+  tokens    Int      @default(0)
+  costRub   Float    @default(0)
+  eventIds  String[] @default([])
+  trace     Json? // шаги: разбор, правила, поиски с фильтрами, ослабления, объяснение, вызовы модели
   createdAt DateTime @default(now())
 
   @@index([createdAt])
+  @@index([userKey, createdAt])
+  @@index([dialogKey])
 }
 
 /**

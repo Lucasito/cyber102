@@ -129,6 +129,27 @@ export default async function AdminAi() {
             )}
           </More>
 
+          <More
+            title="Стоимость"
+            hint={`${ai.priceRubPer1k} ₽ за 1000 токенов · диалог до ${ai.costDialogRub || "∞"} ₽ · пользователь до ${ai.costUserDayRub || "∞"} ₽ в сутки`}
+          >
+            <p className="text-xs text-stone-500">
+              Токены каждого ответа записываются в трассу (раздел «Аналитика»). Превышен лимит — помощник отвечает без ИИ: условия разбирают правила,
+              объяснение — по шаблону. Пользователь — адрес на сайте и в API, аккаунт в боте. 0 — без ограничения; цена 0 — расходы не считаются.
+            </p>
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <Field label="Цена 1000 токенов, ₽" hint="По тарифу провайдера">
+                <Input name="priceRubPer1k" type="number" min={0} step="0.01" defaultValue={ai.priceRubPer1k} />
+              </Field>
+              <Field label="Лимит на диалог, ₽">
+                <Input name="costDialogRub" type="number" min={0} step="0.1" defaultValue={ai.costDialogRub} />
+              </Field>
+              <Field label="Лимит на пользователя в сутки, ₽">
+                <Input name="costUserDayRub" type="number" min={0} step="0.1" defaultValue={ai.costUserDayRub} />
+              </Field>
+            </div>
+          </More>
+
           <More title="Указания помощнику" hint="стиль ответов" open={!!ai.extraPrompt}>
             <Field label="Дополнительные указания" hint="Например: «Отвечай дружелюбно, на «вы». Упоминай Пушкинскую карту, если событие для молодёжи».">
               <Textarea name="extraPrompt" defaultValue={ai.extraPrompt} />

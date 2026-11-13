@@ -1,7 +1,6 @@
 import { z } from "zod";
 import { runAgent } from "@/lib/server/agent";
 import { AiError } from "@/lib/server/ai";
-import { logQuery } from "@/lib/server/analytics";
 import { apiRoute } from "@/lib/server/api";
 import { apiError, json, preflight } from "@/lib/server/cors";
 import { clientIp, rateLimit } from "@/lib/server/rate-limit";
@@ -30,9 +29,11 @@ export const POST = apiRoute("POST /api/ai/chat", async (request) => {
   }
 
   try {
-    const reply = await runAgent(body.data.messages, { lang: body.data.lang });
-    const last = body.data.messages.filter((m) => m.role === "user").at(-1)?.content ?? "";
-    logQuery(request.headers.get("x-afisha-client") === "site" ? "site" : "api", last, reply);
+    const reply = await runAgent(body.data.messages, {
+      lang: body.data.lang,
+      source: request.headers.get("x-afisha-client") === "site" ? "site" : "api",
+      userKey: `ip:${clientIp(request)}`,
+    });
     return json(reply);
   } catch (e) {
     if (e instanceof AiError) return apiError(502, "ai_error", e.message);

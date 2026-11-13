@@ -1,6 +1,8 @@
 import "server-only";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
-import { askJson, chat, type ChatMessage } from "./ai";
+import { askJson, chat, tokensCostRub, withAiUsage, type ChatMessage } from "./ai";
+import { saveTrace, spentRub, type QuerySource } from "./analytics";
 import { db } from "./db";
 import { datePresets, eventFilterSchema, localDay, searchEvents, TZ, type EventFilter, type EventItem } from "./events";
 import { getSettings } from "./settings";
@@ -111,12 +113,68 @@ export type AgentReply = {
   suggestions: string[];
   clarify?: boolean;
   relaxed?: boolean; // точных совпадений не было — фильтр ослаблен
-  degraded?: boolean; // часть ответа без ИИ (перегрузка или сбой)
+  degraded?: boolean; // часть ответа без ИИ (перегрузка, сбой или лимит стоимости)
+  traceId?: string; // трасса ответа в админке: /admin/traces/{traceId}
 };
+
+/** Шаг трассы: разбор, правила, поиск, ослабление, объяснение. */
+export type TraceStep = { step: string; ms?: number; ai?: boolean } & Record<string, unknown>;
+
+type RunOptions = {
+  lang?: Lang;
+  /** Откуда запрос — для аналитики; без source трасса не пишется. */
+  source?: QuerySource;
+  /** Пользователь для лимита стоимости: ip:… или max:… / telegram:…. */
+  userKey?: string;
+};
+
+/**
+ * Ответ агента с трассой (ТЗ 7.4) и лимитами стоимости. Перед ответом сверяем расходы пользователя за сутки и
+ * текущего диалога с лимитами из админки; превышены — отвечаем без ИИ (правила + шаблон), как при сбое.
+ */
+export async function runAgent(history: ChatMessage[], { lang = "ru", source, userKey }: RunOptions = {}): Promise<AgentReply> {
+  const started = Date.now();
+  const first = history.find((m) => m.role === "user")?.content ?? "";
+  const dialogKey = userKey ? createHash("sha1").update(`${userKey}
+${first}`).digest("hex").slice(0, 16) : undefined;
+  const limit = userKey ? await costLimitHit(userKey, dialogKey!) : null;
+  const steps: TraceStep[] = limit ? [{ step: "limit", reason: limit }] : [];
+
+  const { result: reply, calls } = await withAiUsage(() => agentCore(history, lang, { noAi: !!limit, steps }));
+  const tokens = calls.reduce((n, c) => n + c.tokens, 0);
+  const ok = calls.filter((c) => !c.error).length;
+  const mode = limit ? "limit" : !reply.degraded ? "ai" : ok ? "mixed" : "rules";
+  if (!source) return reply;
+  const traceId = randomUUID();
+  saveTrace(traceId, source, history.filter((m) => m.role === "user").at(-1)?.content ?? "", reply, {
+    userKey,
+    dialogKey,
+    mode,
+    latencyMs: Date.now() - started,
+    tokens,
+    costRub: await tokensCostRub(tokens),
+    steps,
+    calls,
+  });
+  return { ...reply, traceId };
+}
+
+/** Какой лимит стоимости превышен (текст для трассы) или null. */
+async function costLimitHit(userKey: string, dialogKey: string): Promise<string | null> {
+  const s = await getSettings("ai");
+  if (!s.priceRubPer1k) return null;
+  const [day, dialog] = await Promise.all([
+    s.costUserDayRub ? spentRub({ userKey, since: new Date(Date.now() - 86_400_000) }) : 0,
+    s.costDialogRub ? spentRub({ dialogKey }) : 0,
+  ]);
+  if (s.costUserDayRub && day >= s.costUserDayRub) return `пользователь за сутки: ${day.toFixed(2)} ₽ из ${s.costUserDayRub} ₽`;
+  if (s.costDialogRub && dialog >= s.costDialogRub) return `диалог: ${dialog.toFixed(2)} ₽ из ${s.costDialogRub} ₽`;
+  return null;
+}
 
 const SPECIFIC_KEYS = ["q", "category", "dateFrom", "dateTo", "priceMax", "free", "age", "city", "pushkin", "access"] as const;
 
-export async function runAgent(history: ChatMessage[], { lang = "ru" }: { lang?: Lang } = {}): Promise<AgentReply> {
+async function agentCore(history: ChatMessage[], lang: Lang, { noAi, steps }: { noAi: boolean; steps: TraceStep[] }): Promise<AgentReply> {
   const P = PHRASES[lang];
   const T = await getSettings("tuning");
   // Тексты из админки (для русского), иначе — по умолчанию
@@ -130,13 +188,17 @@ export async function runAgent(history: ChatMessage[], { lang = "ru" }: { lang?:
   const dialog = history.map((m) => `${m.role === "user" ? "Пользователь" : "Помощник"}: ${m.content}`).join("\n");
   // ИИ недоступен (перегрузка, сбой) — не падаем: условия разберут правила ниже
   let rawIntent: unknown = {};
-  let degraded = false;
-  try {
-    rawIntent = await askJson(await parsePrompt(now, ages), dialog || last);
-  } catch (e) {
-    console.warn("[agent] разбор запроса без ИИ:", e instanceof Error ? e.message : e);
-    degraded = true;
+  let degraded = noAi;
+  let t0 = Date.now();
+  if (!noAi) {
+    try {
+      rawIntent = await askJson(await parsePrompt(now, ages), dialog || last);
+    } catch (e) {
+      console.warn("[agent] разбор запроса без ИИ:", e instanceof Error ? e.message : e);
+      degraded = true;
+    }
   }
+  steps.push({ step: "parse", ai: !degraded, ms: Date.now() - t0, intent: rawIntent });
   if (process.env.AI_DEBUG) console.log("[agent] intent:", JSON.stringify(rawIntent));
   const intent = parseIntent(rawIntent);
 
@@ -145,31 +207,38 @@ export async function runAgent(history: ChatMessage[], { lang = "ru" }: { lang?:
   const model = Object.fromEntries(Object.entries(intent.filter).filter(([, v]) => v != null && v !== ""));
   if (process.env.AI_DEBUG) console.log("[agent] rules:", JSON.stringify(rules));
   const merged: Record<string, unknown> = { ...model, ...rules };
+  steps.push({ step: "rules", rules, merged });
   const specific = SPECIFIC_KEYS.some((k) => merged[k] != null && merged[k] !== "");
 
   // Реплика не про события («привет») — представляемся и задаём уточняющий вопрос
   if (intent.clarify && !specific) {
+    steps.push({ step: "clarify", reason: "реплика не про события" });
     return { text: `${P.hello} ${clarifyText}`, events: [], suggestions: clarifySuggestions, clarify: true };
   }
   const lastAssistant = history.filter((m) => m.role === "assistant").at(-1)?.content ?? "";
   const justClarified = [PHRASES.ru.clarify, PHRASES.ba.clarify, clarifyText].some((c) => lastAssistant.includes(c.slice(0, 40)));
+  if (!specific && !justClarified) steps.push({ step: "clarify", reason: "нет ни одного условия" });
   if (!specific && !justClarified) return { text: clarifyText, events: [], suggestions: clarifySuggestions, clarify: true };
 
   const parsed = eventFilterSchema.safeParse({ ...merged, limit: T.agentEvents });
   const filter = parsed.success ? parsed.data : eventFilterSchema.parse({ limit: T.agentEvents });
 
   // Пусто — ослабляем по очереди: жанр, даты, город. Бюджет и возраст не трогаем — это жёсткие условия
-  const steps = ["dates", "category", "city"] as const;
+  const relaxSteps = ["dates", "category", "city"] as const;
   let current = filter;
+  t0 = Date.now();
   let { items } = await searchEvents(current);
-  const relaxed: (typeof steps)[number][] = [];
-  for (const key of steps) {
+  steps.push({ step: "search", ms: Date.now() - t0, filter: plain(current), found: items.length });
+  const relaxed: (typeof relaxSteps)[number][] = [];
+  for (const key of relaxSteps) {
     if (items.length) break;
     const has = key === "dates" ? current.dateFrom || current.dateTo : current[key];
     if (!has) continue;
     current = key === "dates" ? { ...current, dateFrom: undefined, dateTo: undefined } : { ...current, [key]: undefined };
     relaxed.push(key);
+    t0 = Date.now();
     ({ items } = await searchEvents(current));
+    steps.push({ step: "relax", drop: key, ms: Date.now() - t0, filter: plain(current), found: items.length });
   }
   if (!items.length) {
     return { text: P.nothing, events: [], filter, suggestions: ["Новый поиск"] };
@@ -188,7 +257,8 @@ export async function runAgent(history: ChatMessage[], { lang = "ru" }: { lang?:
   const extra = (await getSettings("ai")).extraPrompt;
   // Честно говорим, какое условие пришлось снять: «На эти даты ничего не нашлось — вот ближайшее.»
   const note = relaxed.length ? `${P.relaxed[relaxed[0]]} ${P.relaxedTail}` : "";
-  const explanation = await chat(
+  t0 = Date.now();
+  const explain = () => chat(
     [
       {
         role: "system",
@@ -213,15 +283,24 @@ export async function runAgent(history: ChatMessage[], { lang = "ru" }: { lang?:
       },
     ],
     { temperature: T.explainTemperature, maxTokens: T.explainMaxTokens },
-  ).catch((e) => {
-    // ИИ недоступен — объяснение по шаблону, подборка всё равно показывается
-    console.warn("[agent] объяснение без ИИ:", e instanceof Error ? e.message : e);
-    degraded = true;
-    return templateExplanation(items, current);
-  });
+  );
+  let explainedByAi = !noAi;
+  const explanation = noAi
+    ? templateExplanation(items, current)
+    : await explain().catch((e) => {
+        // ИИ недоступен — объяснение по шаблону, подборка всё равно показывается
+        console.warn("[agent] объяснение без ИИ:", e instanceof Error ? e.message : e);
+        degraded = true;
+        explainedByAi = false;
+        return templateExplanation(items, current);
+      });
+  steps.push({ step: "explain", ai: explainedByAi, ms: Date.now() - t0, eventIds: items.map((e) => e.id) });
   const text = fixRelativeDays(explanation, items);
   return { text: note ? `${note} ${text}` : text, events: items, filter: current, suggestions: followupSuggestions, relaxed: relaxed.length > 0, degraded };
 }
+
+/** Фильтр для трассы: без пустых полей, даты — строками. */
+const plain = (f: EventFilter) => JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(f).filter(([, v]) => v != null)))) as Record<string, unknown>;
 
 /** Объяснение без ИИ: что учтено и что ближе всего. */
 function templateExplanation(items: EventItem[], f: EventFilter) {

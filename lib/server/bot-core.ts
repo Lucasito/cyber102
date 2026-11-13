@@ -1,7 +1,6 @@
 import "server-only";
 import { runAgent } from "./agent";
 import { AiError, type ChatMessage } from "./ai";
-import { logQuery } from "./analytics";
 import { browseCommand, eventLine, MAIN_MENU, type Button } from "./bot-browse";
 import { db } from "./db";
 import { TZ } from "./events";
@@ -155,8 +154,7 @@ export async function botAnswer(platform: Platform, externalId: string, rawText:
   const T = await getSettings("tuning");
   const history = [...((user.dialog as ChatMessage[] | null) ?? []), { role: "user" as const, content: text }].slice(-T.dialogMemory);
   try {
-    const result = await runAgent(history);
-    logQuery(platform, text, result);
+    const result = await runAgent(history, { source: platform, userKey: `${platform}:${externalId}` });
     await db.botUser.update({
       where: { id: user.id },
       data: { dialog: [...history, { role: "assistant", content: result.text }].slice(-T.dialogMemory), messages: { increment: 1 } },

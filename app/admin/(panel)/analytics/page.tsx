@@ -1,10 +1,11 @@
+import Link from "next/link";
 import { PageTitle, QueryList, Section, Stat } from "@/components/admin/blocks";
 import { requireAdmin } from "@/lib/server/admin";
 import { analyticsSummary } from "@/lib/server/analytics";
 import { db } from "@/lib/server/db";
 import { getSettings } from "@/lib/server/settings";
+import { SOURCE_LABELS } from "@/lib/trace-labels";
 
-const SOURCE_LABELS: Record<string, string> = { site: "Сайт", api: "API", max: "MAX", telegram: "Telegram" };
 
 export default async function AdminAnalytics() {
   await requireAdmin();
@@ -19,6 +20,12 @@ export default async function AdminAnalytics() {
           <Stat label="с уточнением" value={stats.clarified} />
           <Stat label="ответов без ИИ" value={stats.degraded} />
           <Stat label="ждут напоминаний" value={reminders} />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          <Stat label="расходы на ИИ, ₽" value={stats.costRub.toFixed(2)} />
+          <Stat label="₽ на диалог (порог 3)" value={stats.costPerDialog.toFixed(2)} tone={stats.costPerDialog > 3 ? "warn" : undefined} />
+          <Stat label="задержка p95, с (порог 6)" value={(stats.p95Ms / 1000).toFixed(1)} tone={stats.p95Ms > 6000 ? "warn" : undefined} />
+          <Stat label="трассы ответов" value={<Link href="/admin/traces" className="underline">открыть</Link>} />
         </div>
         <div className="mt-6 grid gap-6 sm:grid-cols-[2fr_1fr]">
           <div>

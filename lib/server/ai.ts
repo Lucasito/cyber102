@@ -1,4 +1,5 @@
 import "server-only";
+import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import http from "node:http";
 import https from "node:https";
@@ -257,8 +258,28 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 /** «Предохранитель»: провайдер, не ответивший после всех повторов, какое-то время не трогаем — сразу запасной или шаблон. */
 const downUntil = new Map<ProviderKind, number>();
 
+// ───────── Учёт токенов и стоимости ─────────
+// Агент оборачивает ответ в withAiUsage: каждый вызов chat() внутри записывает провайдера, токены, задержку.
+// Стоимость — по цене за 1000 токенов из админки (раздел «ИИ» → «Стоимость»).
+
+export type AiCall = { provider: string; tokens: number; ms: number; cached?: boolean; error?: string };
+const usageStore = new AsyncLocalStorage<AiCall[]>();
+
+/** Выполнить fn и вернуть все вызовы модели внутри неё. */
+export async function withAiUsage<T>(fn: () => Promise<T>): Promise<{ result: T; calls: AiCall[] }> {
+  const calls: AiCall[] = [];
+  const result = await usageStore.run(calls, fn);
+  return { result, calls };
+}
+
+/** Стоимость токенов в рублях по цене из админки. */
+export async function tokensCostRub(tokens: number) {
+  const s = await getSettings("ai");
+  return Math.round(((tokens / 1000) * s.priceRubPer1k) * 10000) / 10000;
+}
+
 /** Один запрос к провайдеру с повторами: перегрузка (429) — до t.retries раз с удвоением паузы, сбой сети — один. */
-async function callProvider(kind: ProviderKind, p: Provider, body: string, t: Tuning): Promise<string> {
+async function callProvider(kind: ProviderKind, p: Provider, body: string, t: Tuning): Promise<{ text: string; tokens: number }> {
   let lastError: unknown;
   let networkFailures = 0;
   for (let attempt = 0; attempt <= t.retries; attempt++) {
@@ -278,8 +299,11 @@ async function callProvider(kind: ProviderKind, p: Provider, body: string, t: Tu
       }
       if (res.status === 429 || res.status >= 500) throw new AiRetryableError(res.status === 429 ? "ИИ перегружен (429)" : `ИИ: ошибка ${res.status}`);
       if (res.status < 200 || res.status >= 300) throw new AiError(`ИИ: ошибка ${res.status} ${res.text.slice(0, 200)}`);
-      const data = JSON.parse(res.text) as { choices?: { message?: { content?: string } }[] };
-      return data.choices?.[0]?.message?.content ?? "";
+      const data = JSON.parse(res.text) as { choices?: { message?: { content?: string } }[]; usage?: { total_tokens?: number } };
+      const text = data.choices?.[0]?.message?.content ?? "";
+      // Провайдер не вернул usage — оцениваем: ~4 символа на токен
+      const tokens = data.usage?.total_tokens ?? Math.ceil((body.length + text.length) / 4);
+      return { text, tokens };
     } catch (e) {
       lastError = e;
       const overload = e instanceof AiError && /429|слишком много|перегружен|токен устарел/.test(e.message);
@@ -306,8 +330,12 @@ export async function chat(messages: ChatMessage[], { temperature = 0.3, maxToke
   if (s.fallback && all[secondaryKind]) chain.push([secondaryKind, all[secondaryKind]!]);
 
   const cacheKey = `${primary.name}|${temperature}|${maxTokens}|${JSON.stringify(messages)}`;
+  const calls = usageStore.getStore();
   const hit = responseCache.get(cacheKey);
-  if (hit && Date.now() - hit.at < t.cacheMin * 60_000) return hit.text;
+  if (hit && Date.now() - hit.at < t.cacheMin * 60_000) {
+    calls?.push({ provider: primary.name, tokens: 0, ms: 0, cached: true });
+    return hit.text;
+  }
 
   let lastError: unknown = new AiRetryableError("ИИ сейчас недоступен");
   for (const [kind, p] of chain) {
@@ -315,8 +343,10 @@ export async function chat(messages: ChatMessage[], { temperature = 0.3, maxToke
     const body = JSON.stringify({ model: p.model, messages, temperature, max_tokens: maxTokens });
     // GigaChat Freemium — один поток; OpenAI-совместимые обычно держат несколько
     const limit = kind === "gigachat" ? s.concurrency : Math.max(s.concurrency, 4);
+    const started = Date.now();
     try {
-      const text = await limiterFor(kind, limit, t.queueWaitSec * 1000).run(() => callProvider(kind, p, body, t));
+      const { text, tokens } = await limiterFor(kind, limit, t.queueWaitSec * 1000).run(() => callProvider(kind, p, body, t));
+      calls?.push({ provider: p.name, tokens, ms: Date.now() - started });
       if (t.cacheMin > 0) {
         if (responseCache.size > 300) responseCache.delete(responseCache.keys().next().value!);
         responseCache.set(cacheKey, { at: Date.now(), text });
@@ -324,6 +354,7 @@ export async function chat(messages: ChatMessage[], { temperature = 0.3, maxToke
       return text;
     } catch (e) {
       lastError = e;
+      calls?.push({ provider: p.name, tokens: 0, ms: Date.now() - started, error: e instanceof Error ? e.message : String(e) });
       if (!(e instanceof AiRetryableError)) throw e;
       if (chain.length > 1) console.warn(`[ai] ${p.name} недоступен, пробуем запасной провайдер`);
     }

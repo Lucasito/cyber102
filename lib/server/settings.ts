@@ -36,6 +36,10 @@ export const settingsSchema = {
     rateIpDay: z.coerce.number().int().min(0).max(10_000_000).default(10_000),
     rateUserMinute: z.coerce.number().int().min(0).max(100_000).default(150),
     rateUserDay: z.coerce.number().int().min(0).max(10_000_000).default(2000),
+    // Стоимость: цена 1000 токенов (₽) и лимиты расходов; 0 — без ограничения. При превышении — ответ без ИИ
+    priceRubPer1k: num(0, 1000, 1.5),
+    costDialogRub: num(0, 10_000, 10), // на один диалог (предохранитель; порог качества ТЗ — в среднем ≤ 3 ₽, см. «Аналитику»)
+    costUserDayRub: num(0, 100_000, 30), // на пользователя (адрес, аккаунт в мессенджере) в сутки
   }),
   /** Настраиваемые параметры работы (раздел «Параметры» в админке). Значения по умолчанию — проверенные. */
   tuning: z.object({
