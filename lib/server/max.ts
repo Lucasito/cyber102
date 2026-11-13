@@ -73,6 +73,9 @@ function keyboard(reply: BotReply) {
     .slice(0, 10) // ограничение кнопок платформы; сколько показывать — в настройках
     .map((l) => [{ type: "link", text: l.title.slice(0, 64), url: l.url }, ...(l.eventId ? [{ type: "callback", text: "🔔", payload: `/remind ${l.eventId}` }] : [])]);
   for (const a of reply.actions ?? []) rows.push([{ type: "callback", text: a.label.slice(0, 64), payload: a.command }]);
+  for (const row of reply.buttons ?? []) {
+    rows.push(row.map((b) => (b.url ? { type: "link", text: b.label.slice(0, 64), url: b.url } : { type: "callback", text: b.label.slice(0, 64), payload: b.command ?? b.label })));
+  }
   for (let i = 0; i < reply.suggestions.length; i += 2) {
     rows.push(reply.suggestions.slice(i, i + 2).map((s) => ({ type: "message", text: s })));
   }
@@ -91,7 +94,7 @@ export async function sendMaxReply(userId: string, reply: BotReply) {
 }
 
 // Напоминания из фоновой задачи
-registerSender("max", (userId, text, link) => sendMaxReply(userId, { text, links: link ? [link] : [], suggestions: [] }));
+registerSender("max", (userId, text, links) => sendMaxReply(userId, { text, links, suggestions: [] }));
 
 /** Команды меню бота (видны по «/»). */
 export async function setMaxCommands(token: string) {

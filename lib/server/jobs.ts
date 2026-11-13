@@ -1,13 +1,14 @@
 import "server-only";
 import { Prisma } from "@/generated/prisma/client";
 import { db } from "./db";
-import { TZ } from "./events";
+import { TZ, type EventItem } from "./events";
+import { eventLine, subscriptionDigest } from "./bot-browse";
 import { BOTS_PAUSED, getSettings } from "./settings";
 
 // Фоновые задачи (запуск — instrumentation.ts): раз в минуту.
 //  • Прошедшие события получают статус PAST — в API и админке статус соответствует действительности.
 //  • Отправка напоминаний из ботов.
-//  • Раз в час — очистка по срокам хранения (RETENTION).
+//  • Раз в час — очистка по срокам хранения (RETENTION) и рассылка по подпискам (с 10:00, не чаще раза в день).
 
 const MINUTE = 60_000;
 
@@ -25,7 +26,7 @@ export async function markPastEvents() {
 }
 
 /** Отправщики сообщений платформ — регистрируются модулями ботов, чтобы не было циклических импортов. */
-type Sender = (externalId: string, text: string, link?: { title: string; url: string }) => Promise<void>;
+type Sender = (externalId: string, text: string, links: { title: string; url: string }[]) => Promise<void>;
 const senders = new Map<string, Sender>();
 export function registerSender(platform: string, send: Sender) {
   senders.set(platform, send);
@@ -53,12 +54,45 @@ export async function sendDueReminders() {
           : `Напоминание: «${e.title}» — ${when}.${e.venue ? `\n${e.venue.name}, ${e.venue.city}${e.venue.address ? `, ${e.venue.address}` : ""}` : ""}` +
             (e.status === "RESCHEDULED" ? "\nОбратите внимание: событие было перенесено." : "");
     try {
-      await send(r.botUser.externalId, text, { title: e.title, url: `${process.env.PUBLIC_URL ?? ""}/events/${e.id}` });
+      await send(r.botUser.externalId, text, [{ title: e.title, url: `${process.env.PUBLIC_URL ?? ""}/events/${e.id}` }]);
       await db.reminder.update({ where: { id: r.id }, data: { sentAt: new Date() } });
     } catch (err) {
       console.error(`[jobs] напоминание ${r.id} не отправлено:`, err instanceof Error ? err.message : err);
       // Не удаётся больше суток — бросаем, чтобы не слать бесконечно
       if (Date.now() - r.remindAt.getTime() > 86_400_000) await db.reminder.update({ where: { id: r.id }, data: { sentAt: new Date(0) } });
+    }
+  }
+}
+
+/**
+ * Рассылка по подпискам (ТЗ 6.2: без навязчивых уведомлений): с 10:00 местного времени, проверка раз в час,
+ * каждому — не чаще раза в 20 часов, одно сообщение со всеми новыми событиями его подписок; нового нет — молчим.
+ */
+let lastDigestRun = 0;
+export async function sendSubscriptionDigests() {
+  if (BOTS_PAUSED) return;
+  const hour = Number(new Date().toLocaleString("en-US", { timeZone: TZ, hour: "numeric", hour12: false }));
+  if (hour < 10 || hour >= 21 || Date.now() - lastDigestRun < 60 * MINUTE) return;
+  lastDigestRun = Date.now();
+  const due = await db.subscription.findMany({ where: { notifiedUpTo: { lt: new Date(Date.now() - 20 * 60 * MINUTE) } }, include: { botUser: true } });
+  const byUser = new Map<string, typeof due>();
+  for (const s of due) byUser.set(s.botUserId, [...(byUser.get(s.botUserId) ?? []), s]);
+  const base = process.env.PUBLIC_URL ?? "";
+  for (const subs of byUser.values()) {
+    const user = subs[0].botUser;
+    const send = senders.get(user.platform);
+    if (!send) continue;
+    const seen = new Map<string, EventItem>();
+    for (const s of subs) for (const e of await subscriptionDigest(s)) seen.set(e.id, e);
+    const events = [...seen.values()].sort((a, b) => a.startsAt.getTime() - b.startsAt.getTime()).slice(0, 8);
+    if (!events.length) continue;
+    const list = events.map((e, i) => eventLine(e, i + 1)).join("\n\n");
+    const text = `Новое в афише по вашим подпискам:\n\n${list}\n\nПодписки — /subs, отписаться от всех — /unsubscribe.`;
+    try {
+      await send(user.externalId, text, events.map((e) => ({ title: e.title, url: `${base}/events/${e.id}` })));
+      await db.subscription.updateMany({ where: { id: { in: subs.map((s) => s.id) } }, data: { notifiedUpTo: new Date() } });
+    } catch (err) {
+      console.error(`[jobs] рассылка подписки не отправлена:`, err instanceof Error ? err.message : err);
     }
   }
 }
@@ -89,6 +123,7 @@ export function startJobs() {
     await markPastEvents().catch((e) => console.error("[jobs] статусы:", e instanceof Error ? e.message : e));
     await sendDueReminders().catch((e) => console.error("[jobs] напоминания:", e instanceof Error ? e.message : e));
     await purgeOldData().catch((e) => console.error("[jobs] очистка:", e instanceof Error ? e.message : e));
+    await sendSubscriptionDigests().catch((e) => console.error("[jobs] подписки:", e instanceof Error ? e.message : e));
   };
   setTimeout(tick, 15_000); // после старта — дать подняться ботам
   setInterval(tick, MINUTE);

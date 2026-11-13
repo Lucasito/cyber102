@@ -123,15 +123,17 @@ model EventSource {
  * Пользователь бота (MAX, Telegram) и контекст диалога с ИИ-агентом.
  */
 model BotUser {
-  id         String     @id @default(cuid())
-  platform   String // max | telegram
-  externalId String // id пользователя в мессенджере
-  name       String?
-  dialog     Json? // последние сообщения для уточняющих вопросов агента
-  messages   Int        @default(0)
-  reminders  Reminder[]
-  createdAt  DateTime   @default(now())
-  lastSeenAt DateTime   @default(now())
+  id            String         @id @default(cuid())
+  platform      String // max | telegram
+  externalId    String // id пользователя в мессенджере
+  name          String?
+  dialog        Json? // последние сообщения для уточняющих вопросов агента
+  browse        Json? // фильтры поиска кнопками: город, категория, даты, цена, страница
+  messages      Int            @default(0)
+  reminders     Reminder[]
+  subscriptions Subscription[]
+  createdAt     DateTime       @default(now())
+  lastSeenAt    DateTime       @default(now())
 
   @@unique([platform, externalId])
 }
@@ -286,4 +288,20 @@ model AuditLog {
 
   @@index([entity, entityId])
   @@index([createdAt])
+}
+
+/**
+ * Подписка из бота на новые события города и категории (ТЗ 6.2). Только идентификатор пользователя и фильтр —
+ * без персональных данных; отписка удаляет запись. Уведомления — не чаще раза в день (lib/server/jobs.ts).
+ */
+model Subscription {
+  id           String   @id @default(cuid())
+  botUserId    String
+  botUser      BotUser  @relation(fields: [botUserId], references: [id], onDelete: Cascade)
+  city         String? // null — любой город
+  category     String? // slug категории; null — любая
+  notifiedUpTo DateTime @default(now()) // события, добавленные позже, — новые для подписчика
+  createdAt    DateTime @default(now())
+
+  @@unique([botUserId, city, category])
 }

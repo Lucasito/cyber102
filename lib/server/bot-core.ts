@@ -1,7 +1,8 @@
 import "server-only";
-import { CLARIFY_SUGGESTIONS, runAgent } from "./agent";
+import { runAgent } from "./agent";
 import { AiError, type ChatMessage } from "./ai";
 import { logQuery } from "./analytics";
+import { browseCommand, eventLine, MAIN_MENU, type Button } from "./bot-browse";
 import { db } from "./db";
 import { TZ } from "./events";
 import { reminderTime } from "./jobs";
@@ -21,22 +22,28 @@ export type BotReply = {
   suggestions: string[];
   /** Кнопки-действия: нажатие отправляет команду (её текст пользователь не видит). */
   actions?: { label: string; command: string }[];
+  /** Ряды кнопок поиска кнопками: команда (callback) или ссылка. Показываются после links и actions. */
+  buttons?: Button[][];
 };
 
-/** Команды меню. Команда превращается в обычный запрос к агенту (или в служебное действие). */
+/**
+ * Команды меню (видны по «/»). query — во что превращается команда: в команду поиска кнопками
+ * (работает без ИИ) или в служебное действие; null — обрабатывается как есть.
+ */
 export const BOT_COMMANDS = [
   { command: "start", description: "Начать заново", query: null },
-  { command: "today", description: "Что идёт сегодня", query: "Сегодня" },
-  { command: "weekend", description: "Куда сходить на выходных", query: "На выходных" },
-  { command: "free", description: "Бесплатные события", query: "Бесплатно" },
-  { command: "kids", description: "Куда сходить с ребёнком", query: "С ребёнком" },
-  { command: "pushkin", description: "По Пушкинской карте", query: "По Пушкинской карте" },
+  { command: "menu", description: "Меню поиска", query: null },
+  { command: "today", description: "Что идёт сегодня", query: "/f when=today" },
+  { command: "weekend", description: "Куда сходить на выходных", query: "/f when=weekend" },
+  { command: "free", description: "Бесплатные события", query: "/f free=1" },
+  { command: "kids", description: "Куда сходить с ребёнком", query: "/f age=6" },
+  { command: "pushkin", description: "По Пушкинской карте", query: "/f pushkin=1" },
+  { command: "subs", description: "Мои подписки", query: null },
+  { command: "unsubscribe", description: "Отписаться от всех", query: null },
   { command: "reminders", description: "Мои напоминания", query: null },
-  { command: "new", description: "Новый поиск", query: null },
+  { command: "cancel", description: "Сбросить поиск", query: null },
+  { command: "help", description: "Как пользоваться", query: null },
 ] as const;
-
-/** Кнопки главного меню (постоянная клавиатура Telegram, кнопки после приветствия в MAX). */
-export const MENU_BUTTONS = ["Сегодня", "На выходных", "Бесплатно", "С ребёнком", "Новый поиск"];
 
 const RESET = /^(\/start|\/new|новый поиск|начать заново|сброс)(?![а-яё\w])/i;
 
@@ -67,9 +74,9 @@ function commandToQuery(text: string) {
   return cmd.query ?? `/${cmd.command}${m[3] ? ` ${m[3]}` : ""}`;
 }
 
-/** Приветствие с меню. */
+/** Приветствие с главным меню на кнопках под сообщением (ТЗ 6.2: без «простыни» текста). */
 export function greetingReply(greeting?: string): BotReply {
-  return { text: `${greeting || DEFAULT_BOT_GREETING}\n\n${BOT_DISCLAIMER}`, links: [], suggestions: MENU_BUTTONS.filter((b) => b !== "Новый поиск") };
+  return { text: `${greeting || DEFAULT_BOT_GREETING}\n\n${BOT_DISCLAIMER}`, links: [], suggestions: [], buttons: MAIN_MENU };
 }
 
 const fmtWhen = (d: Date) => d.toLocaleString("ru-RU", { timeZone: TZ, weekday: "short", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
@@ -103,7 +110,7 @@ async function listReminders(botUserId: string): Promise<BotReply> {
     orderBy: { remindAt: "asc" },
     take: 10,
   });
-  if (!list.length) return { text: "Напоминаний нет. Нажмите «🔔» под событием в подборке — напомню за день до начала.", links: [], suggestions: MENU_BUTTONS.slice(0, 4) };
+  if (!list.length) return { text: "Напоминаний нет. Нажмите «🔔» под событием в подборке — напомню за день до начала.", links: [], suggestions: [], buttons: MAIN_MENU };
   return {
     text: "Ваши напоминания:\n" + list.map((r) => `• ${r.event.title} — ${fmtWhen(r.event.startsAt)} (напомню ${fmtWhen(r.remindAt)})`).join("\n"),
     links: [],
@@ -118,10 +125,17 @@ export async function botAnswer(platform: Platform, externalId: string, rawText:
   const user = await touchBotUser(platform, externalId);
   const text = commandToQuery(rawText.trim()).slice(0, 1000);
 
-  // Новый поиск: забываем прежний диалог
+  // Новый поиск: забываем прежний диалог и фильтры
   if (RESET.test(text)) {
-    await db.botUser.update({ where: { id: user.id }, data: { dialog: [] } });
-    return /^\/start/i.test(text) ? greetingReply(greeting) : { text: "Хорошо, начнём заново. Что ищете?", links: [], suggestions: CLARIFY_SUGGESTIONS };
+    await db.botUser.update({ where: { id: user.id }, data: { dialog: [], browse: {} } });
+    return /^\/start/i.test(text)
+      ? greetingReply(greeting)
+      : { text: "Хорошо, начнём заново. Что ищете? Выберите кнопкой или напишите своими словами.", links: [], suggestions: [], buttons: MAIN_MENU };
+  }
+  // Поиск кнопками, карточка события, подписки, /help, /cancel — без ИИ
+  if (text.startsWith("/")) {
+    const browsed = await browseCommand(user.id, text);
+    if (browsed) return { text: browsed.text, links: [], suggestions: [], buttons: browsed.buttons };
   }
   // Напоминания
   const rem = text.match(/^\/(remind|unremind)\s+(\S+)/);
@@ -148,12 +162,23 @@ export async function botAnswer(platform: Platform, externalId: string, rawText:
       data: { dialog: [...history, { role: "assistant", content: result.text }].slice(-T.dialogMemory), messages: { increment: 1 } },
     });
     const events = result.events.slice(0, T.botEvents);
-    const list = events.map((e) => `• ${e.title} — ${fmtWhen(e.startsAt)}, ${e.venue?.name ?? ""}`).join("\n");
+    const list = events.map((e, i) => eventLine(e, i + 1)).join("\n\n");
     const notes = [result.degraded ? DEGRADED_NOTE : "", DATA_NOTE].filter(Boolean).join("\n");
     return {
       text: list ? `${result.text}\n\n${list}\n\n${notes}` : result.text,
-      links: events.map((e) => ({ title: e.title, url: eventUrl(e.id), eventId: e.id })),
-      suggestions: result.suggestions,
+      links: [],
+      suggestions: result.suggestions.filter((s) => !/^новый поиск$/i.test(s)),
+      // Событие открывается карточкой прямо в боте (адрес, цена, источник, билеты), рядом — напоминание
+      buttons: [
+        ...events.map((e, i) => [
+          { label: `${i + 1}. ${e.title}`.slice(0, 60), command: `/e ${e.id}` },
+          { label: "🔔", command: `/remind ${e.id}` },
+        ]),
+        [
+          { label: "Меню", command: "/menu" },
+          { label: "Новый поиск", command: "/new" },
+        ],
+      ],
     };
   } catch (e) {
     console.error(`[${platform}] агент:`, e);

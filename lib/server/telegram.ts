@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { BOT_COMMANDS, botAnswer, MENU_BUTTONS, type BotReply } from "./bot-core";
+import { BOT_COMMANDS, botAnswer, type BotReply } from "./bot-core";
 import { registerSender } from "./jobs";
 import { telegramConfig } from "./settings";
 
@@ -11,8 +11,8 @@ import { telegramConfig } from "./settings";
 //    возвращается прямо в теле HTTP-ответа — исходящий доступ к Telegram не нужен.
 //    Входящие от Telegram тоже режутся с перебоями — ответы могут задерживаться.
 //
-// Меню: команды (/today, /weekend…), постоянная клавиатура после /start,
-// кнопки под ответом — ссылки на события и подсказки (нажатие = запрос).
+// Меню: команды (/today, /weekend…) и кнопки под сообщением (инлайн): главное меню после /start,
+// поиск кнопками, карточки событий, подписки; подсказки — нажатие отправляет запрос.
 
 export class TelegramError extends Error {}
 
@@ -77,21 +77,20 @@ function callbackData(text: string) {
   return Q + s;
 }
 
-/** sendMessage с кнопками. /start — постоянная клавиатура меню, иначе — кнопки под сообщением. */
-export function sendMessagePayload(chatId: number, reply: BotReply, menu = false) {
+/** sendMessage с кнопками под сообщением (инлайн): ссылки, команды поиска кнопками, подсказки. */
+export function sendMessagePayload(chatId: number, reply: BotReply) {
   // Ссылка на событие и рядом «🔔» — напоминание
   const rows: unknown[][] = reply.links
     .slice(0, 10) // ограничение кнопок платформы; сколько показывать — в настройках
     .map((l) => [{ text: l.title.slice(0, 60), url: l.url }, ...(l.eventId ? [{ text: "🔔", callback_data: callbackData(`/remind ${l.eventId}`) }] : [])]);
   for (const a of reply.actions ?? []) rows.push([{ text: a.label.slice(0, 60), callback_data: callbackData(a.command) }]);
+  for (const row of reply.buttons ?? []) {
+    rows.push(row.map((b) => (b.url ? { text: b.label.slice(0, 60), url: b.url } : { text: b.label.slice(0, 60), callback_data: callbackData(b.command ?? b.label) })));
+  }
   for (let i = 0; i < reply.suggestions.length; i += 2) {
     rows.push(reply.suggestions.slice(i, i + 2).map((s) => ({ text: s, callback_data: callbackData(s) })));
   }
-  const replyMarkup = menu
-    ? { keyboard: [MENU_BUTTONS.slice(0, 2), MENU_BUTTONS.slice(2, 4), MENU_BUTTONS.slice(4)].map((r) => r.map((text) => ({ text }))), resize_keyboard: true, is_persistent: true }
-    : rows.length
-      ? { inline_keyboard: rows }
-      : undefined;
+  const replyMarkup = rows.length ? { inline_keyboard: rows.slice(0, 40) } : undefined;
   return { chat_id: chatId, text: reply.text.slice(0, 4000), link_preview_options: { is_disabled: true }, ...(replyMarkup ? { reply_markup: replyMarkup } : {}) };
 }
 
@@ -121,7 +120,7 @@ export async function telegramHandle(update: TgUpdate): Promise<ReturnType<typeo
   const timer = cfg.mode === "polling" ? (typing(), setInterval(typing, 4500)) : null;
   try {
     const reply = await botAnswer("telegram", String(from?.id ?? chat.id), text, cfg.greeting);
-    return sendMessagePayload(chat.id, reply, /^\/start/i.test(text));
+    return sendMessagePayload(chat.id, reply);
   } finally {
     if (timer) clearInterval(timer);
   }
@@ -129,8 +128,8 @@ export async function telegramHandle(update: TgUpdate): Promise<ReturnType<typeo
 
 // Напоминания из фоновой задачи. В личном чате chat_id совпадает с id пользователя.
 // В режиме webhook исходящих запросов нет — напоминания уйдут, только если задан адрес API (воркер).
-registerSender("telegram", async (userId, text, link) => {
-  await tg("sendMessage", sendMessagePayload(Number(userId), { text, links: link ? [link] : [], suggestions: [] }));
+registerSender("telegram", async (userId, text, links) => {
+  await tg("sendMessage", sendMessagePayload(Number(userId), { text, links, suggestions: [] }));
 });
 
 // ───────── Long polling ─────────
