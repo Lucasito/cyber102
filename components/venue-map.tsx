@@ -119,12 +119,28 @@ async function yandexMap(el: HTMLDivElement, points: MapPoint[], me: { lat: numb
   map.addChild(new YMapDefaultSchemeLayer({ theme: "light" }));
   map.addChild(new YMapDefaultFeaturesLayer({}));
 
-  // Всплывающее окно — свой элемент поверх карты (в v3 нет готового балуна)
+  // Всплывающее окно — свой элемент поверх карты (в v3 нет готового балуна). Сверху: внизу — логотип, копирайты и
+  // ссылка на условия Яндекса, их нельзя перекрывать (Условия использования сервисов Яндекс Карт, п. 4.1.3.1)
   const popup = document.createElement("div");
   popup.className = "ymap-popup";
   popup.style.cssText =
-    "position:absolute;left:12px;right:12px;bottom:12px;z-index:10;max-width:320px;padding:10px 32px 10px 12px;background:#fff;border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,.18);font-size:13px;line-height:1.45;display:none";
+    "position:absolute;left:12px;right:12px;top:52px;z-index:10;max-width:320px;padding:10px 32px 10px 12px;background:#fff;border-radius:14px;box-shadow:0 4px 16px rgba(0,0,0,.18);font-size:13px;line-height:1.45;display:none";
   el.appendChild(popup);
+
+  // Кнопка «Открыть в Картах» — обязательна по условиям бесплатного использования (п. 4.1.3.3)
+  const center = all.length ? [all.reduce((a, c) => a + c[0], 0) / all.length, all.reduce((a, c) => a + c[1], 0) / all.length] : [UFA.lon, UFA.lat];
+  const pt = points
+    .slice(0, 50)
+    .map((q) => `${q.lon},${q.lat},pm2gnm`)
+    .join("~");
+  const open = document.createElement("a");
+  open.href = `https://yandex.ru/maps/?ll=${center[0]},${center[1]}&z=${all.length === 1 ? 15 : 12}${pt ? `&pt=${pt}` : ""}`;
+  open.target = "_blank";
+  open.rel = "noopener";
+  open.textContent = "Открыть в Картах";
+  open.style.cssText =
+    "position:absolute;top:12px;right:12px;z-index:10;padding:6px 12px;background:#fff;border-radius:999px;box-shadow:0 1px 6px rgba(0,0,0,.2);font-size:13px;font-weight:500;color:#1c1917;text-decoration:none";
+  el.appendChild(open);
   const close = () => (popup.style.display = "none");
   map.addChild(new ymaps3.YMapListener({ onClick: close }));
 
@@ -147,6 +163,7 @@ async function yandexMap(el: HTMLDivElement, points: MapPoint[], me: { lat: numb
   return () => {
     map.destroy();
     popup.remove();
+    open.remove();
   };
 }
 /* eslint-enable @typescript-eslint/no-explicit-any */
