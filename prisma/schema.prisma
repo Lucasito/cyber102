@@ -116,7 +116,9 @@ model EventSource {
   sourceHash String? // хеш исходной записи — повторная загрузка той же записи ничего не меняет
   fetchedAt  DateTime   @default(now())
 
-  @@unique([source, url])
+  @@unique([eventId, source, url]) // одна ссылка (страница постановки) может вести к нескольким сеансам
+  @@index([source, url])
+  @@index([source, externalId])
 }
 
 /**

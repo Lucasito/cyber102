@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import type { EventStatus, Prisma, Publication, SourceType } from "@/generated/prisma/client";
 import { audit, diffFields } from "./audit";
 import { db } from "./db";
-import { categorySlug, dedupKey, normalizeCity, normalizeTitle, parseAge, parseBool, parseDate, parsePrice, parseTags, parseUrl } from "./normalize";
+import { categorySlug, dedupKey, inBashkortostan, normalizeCity, normalizeTitle, parseAge, parseBool, parseDate, parseDuration, parsePrice, parseTags, parseUrl, RB_SETTLEMENTS } from "./normalize";
 
 // Импорт событий из CSV/JSON (ТЗ 6.1): валидация, нормализация, дедупликация, идемпотентность, отчёт.
 //  • Сырые строки — в RawRecord (отдельно от событий): повторная загрузка той же строки ничего не меняет.
@@ -156,8 +156,10 @@ function normalizeRow(r: Record<string, unknown>, ctx: { cities: string[]; categ
   if (title.length < 3 || title.length > 300) return { error: "название короче 3 или длиннее 300 символов" };
   const startsAt = parseDate(r.dateStart, ctx.now);
   if (!startsAt) return { error: `не удалось разобрать дату начала «${String(r.dateStart)}»` };
-  const endsAt = r.dateEnd != null ? parseDate(r.dateEnd, ctx.now) : null;
+  let endsAt = r.dateEnd != null ? parseDate(r.dateEnd, ctx.now) : null;
   if (r.dateEnd != null && !endsAt) return { error: `не удалось разобрать дату окончания «${String(r.dateEnd)}»` };
+  // Окончание, равное началу, — заглушка сайта (так у СГТКО и филармонии), а не настоящее время: считаем неизвестным
+  if (endsAt && endsAt.getTime() === startsAt.getTime()) endsAt = null;
   if (endsAt && endsAt < startsAt) return { error: "окончание раньше начала" };
   if ((endsAt ?? startsAt).getTime() < ctx.now.getTime()) return { error: "событие уже прошло" };
   const sourceUrl = parseUrl(r.sourceUrl);
@@ -179,12 +181,14 @@ function normalizeRow(r: Record<string, unknown>, ctx: { cities: string[]; categ
   const statusHit = STATUS_WORDS.find(([re]) => re.test(statusText))?.[1];
   const lat = r.lat != null ? Number(String(r.lat).replace(",", ".")) : null;
   const lon = r.lon != null ? Number(String(r.lon).replace(",", ".")) : null;
-  const duration = r.durationMin != null ? parseInt(String(r.durationMin), 10) : null;
+  const duration = parseDuration(r.durationMin);
   const cat = categorySlug(r.category, ctx.categories);
+  const city = normalizeCity(String(r.city), ctx.cities);
 
   const issues: string[] = [];
   if (!cat) issues.push(r.category ? `категория «${String(r.category)}» не из справочника` : "нет категории");
   if (priceMin == null && priceMax == null) issues.push("цена не указана");
+  if (!inBashkortostan(city)) issues.push(`населённого пункта «${city}» нет в справочнике РБ — проверьте, что событие в Башкортостане`);
 
   return {
     externalId: r.externalId != null ? String(r.externalId).slice(0, 100) : null,
@@ -193,8 +197,8 @@ function normalizeRow(r: Record<string, unknown>, ctx: { cities: string[]; categ
     description: typeof r.description === "string" ? r.description.slice(0, 5000) : null,
     startsAt,
     endsAt,
-    durationMin: Number.isFinite(duration) && duration! > 0 && duration! < 100_000 ? duration : null,
-    city: normalizeCity(String(r.city), ctx.cities),
+    durationMin: duration,
+    city,
     venue: String(r.venue).replace(/\s+/g, " ").trim().slice(0, 200),
     address: typeof r.address === "string" ? r.address.slice(0, 300) : null,
     lat: lat != null && Number.isFinite(lat) && Math.abs(lat) <= 90 ? lat : null,
@@ -242,7 +246,8 @@ export async function importRows(rows: Record<string, unknown>[], opts: { fileNa
   const sourceType = opts.sourceType ?? "IMPORT";
   const source = opts.source.trim().toLowerCase().replace(/[^a-z0-9._-]+/g, "-").slice(0, 60) || "import";
   const [venues, categories] = await Promise.all([db.venue.findMany({ distinct: ["city"], select: { city: true } }), db.category.findMany({ select: { id: true, slug: true } })]);
-  const ctx = { cities: venues.map((v) => v.city), categories: categories.map((c) => c.slug), now: new Date() };
+  // Справочник для исправления опечаток: населённые пункты РБ и города уже известных площадок
+  const ctx = { cities: [...new Set([...RB_SETTLEMENTS, ...venues.map((v) => v.city)])], categories: categories.map((c) => c.slug), now: new Date() };
   const categoryId = new Map(categories.map((c) => [c.slug, c.id]));
 
   const run = await db.importRun.create({ data: { fileName: opts.fileName.slice(0, 200), source, total: rows.length, report: [], userLogin: opts.userLogin } });
@@ -271,7 +276,7 @@ export async function importRows(rows: Record<string, unknown>[], opts: { fileNa
         continue;
       }
 
-      const key = dedupKey(n.title, n.startsAt, n.venue);
+      const key = dedupKey(n.title, n.startsAt, n.venue, n.city);
       const result = await db.$transaction(async (tx) => {
         const venue = await venueFor(tx, n);
         // Своё событие источника: по externalId (переживает перенос даты) или по ключу дедупликации
@@ -286,12 +291,13 @@ export async function importRows(rows: Record<string, unknown>[], opts: { fileNa
           normalizedTitle: n.normalizedTitle,
           description: n.description ?? existing?.description ?? null,
           startsAt: n.startsAt,
-          endsAt: n.endsAt,
-          durationMin: n.durationMin,
+          // Пустое значение из источника не затирает уже известное (другой источник мог быть полнее)
+          endsAt: n.endsAt ?? existing?.endsAt ?? null,
+          durationMin: n.durationMin ?? existing?.durationMin ?? null,
           status: rescheduled && n.status === "SCHEDULED" ? ("RESCHEDULED" as const) : n.status,
-          priceMin: n.priceMin,
-          priceMax: n.priceMax,
-          ageLimit: n.ageLimit,
+          priceMin: n.priceMin ?? existing?.priceMin ?? null,
+          priceMax: n.priceMin != null || n.priceMax != null ? n.priceMax : (existing?.priceMax ?? null),
+          ageLimit: n.ageLimit ?? existing?.ageLimit ?? null,
           categoryId: n.categorySlug ? (categoryId.get(n.categorySlug) ?? null) : (existing?.categoryId ?? null),
           venueId: venue.id,
           tags: n.tags.length ? n.tags : (existing?.tags ?? []),
@@ -323,10 +329,10 @@ export async function importRows(rows: Record<string, unknown>[], opts: { fileNa
             await audit({ userLogin: opts.userLogin, action: "import", entity: "event", entityId: eventId, summary: `Импорт «${opts.fileName}», строка ${rowNo}: обновлено «${n.title}»`, diff }, tx);
           } else outcome = "unchanged";
         }
-        // Источник: та же ссылка у другого события — не переносим (это другой анонс), иначе привязываем
-        const link = await tx.eventSource.findUnique({ where: { source_url: { source, url: n.sourceUrl } } });
+        // Источник события. Одна ссылка может относиться к нескольким сеансам (страница постановки) — связь своя у каждого
+        const link = await tx.eventSource.findFirst({ where: { eventId, source, url: n.sourceUrl } });
         if (!link) await tx.eventSource.create({ data: { eventId, source, sourceType, url: n.sourceUrl, externalId: n.externalId, sourceHash: hash } });
-        else if (link.eventId === eventId) await tx.eventSource.update({ where: { id: link.id }, data: { sourceHash: hash, externalId: n.externalId ?? link.externalId, fetchedAt: new Date() } });
+        else await tx.eventSource.update({ where: { id: link.id }, data: { sourceHash: hash, externalId: n.externalId ?? link.externalId, fetchedAt: new Date() } });
         await tx.rawRecord.upsert({
           where: { source_hash: { source, hash } },
           create: { source, sourceType, hash, payload: raw as Prisma.InputJsonValue, importId: run.id, eventId },

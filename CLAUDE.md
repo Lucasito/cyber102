@@ -1,7 +1,7 @@
 # Афиша культуры Башкортостана — правила проекта
 
 Документация: README.md и docs/ (ARCHITECTURE, API, BOTS, ADMIN, DEPLOY). При изменениях — обновлять.
-ТЗ заказчика — docs/TZ.md, сверка и план работ — docs/PLAN.md (отмечать выполненное).
+ТЗ заказчика — docs/TZ.md, сверка и план работ — docs/PLAN.md (отмечать выполненное), источники событий — docs/DATA_SOURCES.md.
 
 - Стек: Next.js 16 (App Router) + Prisma 7 (клиент в `generated/prisma`) + PostgreSQL 16, Tailwind 4.
   Код и комментарии на русском. Модули ИИ и MAX — из `D:\Git\crm_spare_parts`.

@@ -87,7 +87,7 @@ export async function saveEvent(_: ActionState, f: FormData): Promise<ActionStat
         ...(rescheduled ? { originalStartsAt: before.originalStartsAt ?? before.startsAt } : {}),
       };
       if (!before) {
-        const key = dedupKey(title, startsAt, venueName);
+        const key = dedupKey(title, startsAt, venueName, city);
         const twin = await tx.event.findUnique({ where: { dedupKey: key }, select: { id: true } });
         if (twin) throw new Error(`Такое событие уже есть (то же название, дата и площадка): /admin/events/${twin.id}`);
         const ev = await tx.event.create({

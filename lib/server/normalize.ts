@@ -14,9 +14,32 @@ export function normalizeTitle(s: string) {
 }
 
 /** Ключ дедупликации (ТЗ 6.5): нормализованное название + местная дата начала + нормализованная площадка. */
-export function dedupKey(title: string, startsAt: Date, venue: string | null | undefined) {
-  const day = startsAt.toLocaleDateString("sv-SE", { timeZone: "Asia/Yekaterinburg" });
-  return `${normalizeTitle(title)}|${day}|${normalizeTitle(venue ?? "")}`;
+/**
+ * Ключ дедупликации (ТЗ 6.5): нормализованное название + местные дата и время начала + город + площадка.
+ * Время входит в ключ: сеансы одной постановки в 14:00 и 18:00 — два события, а не одно.
+ */
+export function dedupKey(title: string, startsAt: Date, venue: string | null | undefined, city?: string | null) {
+  const at = startsAt.toLocaleString("sv-SE", { timeZone: "Asia/Yekaterinburg" }).slice(0, 16);
+  return `${normalizeTitle(title)}|${at}|${normalizeTitle(city ?? "")}|${normalizeTitle(venue ?? "")}`;
+}
+
+/**
+ * Длительность в минутах: 130, «130 мин», «2:00», «2 ч 10 мин», «2 часа», «1,5 часа», «PT2H10M». Не разобрали — null.
+ * (Источники пишут «2:00» — это 120 минут, а не 2.)
+ */
+export function parseDuration(input: unknown): number | null {
+  if (typeof input === "number") return input > 0 && input < 100_000 ? Math.round(input) : null;
+  if (typeof input !== "string" || !input.trim()) return null;
+  const s = input.trim().toLowerCase().replace(",", ".");
+  let m = s.match(/^pt(?:(\d+)h)?(?:(\d+)m)?$/);
+  if (m && (m[1] || m[2])) return (+(m[1] ?? 0)) * 60 + +(m[2] ?? 0) || null;
+  m = s.match(/^(\d{1,2}):(\d{2})$/);
+  if (m) return +m[1] * 60 + +m[2] || null;
+  const h = s.match(/(\d+(?:\.\d+)?)\s*(?:ч|час)/);
+  const min = s.match(/(\d+)\s*(?:мин|m)/);
+  if (h || min) return Math.round((h ? parseFloat(h[1]) * 60 : 0) + (min ? +min[1] : 0)) || null;
+  m = s.match(/^(\d+)$/);
+  return m && +m[1] > 0 && +m[1] < 100_000 ? +m[1] : null;
 }
 
 const MONTHS: Record<string, number> = {
@@ -41,9 +64,13 @@ export function parseDate(input: unknown, now = new Date()): Date | null {
   };
   const withYear = (m: number, d: number, hh?: number, mm?: number, y?: number) => {
     if (y) return build(y, m, d, hh, mm);
+    // Год не указан: недавняя дата (до полугода назад) — это прошлое, а не следующий год. Иначе старая
+    // афиша превратилась бы в ложные будущие события; «5 января» в ноябре — следующий год.
     const year = now.getUTCFullYear();
     const guess = build(year, m, d, hh, mm);
-    return guess && guess.getTime() < now.getTime() - 86_400_000 ? build(year + 1, m, d, hh, mm) : guess;
+    if (!guess) return null;
+    const ago = now.getTime() - guess.getTime();
+    return ago > 183 * 86_400_000 ? build(year + 1, m, d, hh, mm) : guess;
   };
   let m = s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[t\s](\d{1,2}):(\d{2})(?::\d{2}(?:\.\d+)?)?)?\s*(z|[+-]\d{2}:?\d{2})?$/);
   if (m) {
@@ -80,6 +107,8 @@ export function parsePrice(input: unknown): { min: number | null; max: number | 
   const nums = [...s.replace(/(\d)\s+(?=\d{3}\b)/g, "$1").matchAll(/\d+(?:[.,]\d+)?/g)].map((x) => Math.round(parseFloat(x[0].replace(",", "."))));
   if (!nums.length) return { min: null, max: null };
   if (/^до\s/.test(s)) return { min: null, max: nums[0] };
+  // «от 400 ₽», «400 - ₽», «400+» — известен только минимум; верхнюю границу не выдумываем
+  if (nums.length === 1 && (/^от\s/.test(s) || /\d\s*[-–—]\s*(₽|руб|р\.?)?\s*$/.test(s) || /\d\s*\+/.test(s))) return { min: nums[0], max: null };
   return { min: Math.min(...nums), max: Math.max(...nums) };
 }
 
@@ -132,6 +161,28 @@ export function normalizeCity(input: string, known: string[]): string {
   const limit = target.length >= 7 ? 2 : target.length >= 4 ? 1 : 0;
   if (best && best.d <= limit) return best.city;
   return raw.charAt(0).toUpperCase() + raw.slice(1);
+}
+
+/**
+ * Населённые пункты Республики Башкортостан: 21 город и районные центры. Афиша — только о событиях в РБ:
+ * регион проверяется по площадке сеанса. Населённого пункта нет в списке (село, опечатка или другой регион) —
+ * карточка не отклоняется, а уходит в модерацию.
+ */
+export const RB_SETTLEMENTS = [
+  // города
+  "Уфа", "Стерлитамак", "Салават", "Нефтекамск", "Октябрьский", "Туймазы", "Ишимбай", "Кумертау", "Белорецк", "Сибай",
+  "Белебей", "Мелеуз", "Бирск", "Учалы", "Благовещенск", "Давлеканово", "Дюртюли", "Янаул", "Баймак", "Агидель", "Межгорье",
+  // районные центры (сёла и посёлки)
+  "Акъяр", "Аскарово", "Аскино", "Бакалы", "Бижбуляк", "Большеустьикинское", "Буздяк", "Бураево", "Верхнеяркеево", "Верхние Киги",
+  "Ермекеево", "Ермолаево", "Зилаир", "Иглино", "Исянгулово", "Караидель", "Кармаскалы", "Киргиз-Мияки", "Красная Горка", "Красноусольский",
+  "Кушнаренково", "Малояз", "Месягутово", "Мраково", "Новобелокатай", "Приютово", "Раевский", "Старобалтачево", "Старосубхангулово",
+  "Стерлибашево", "Толбазы", "Фёдоровка", "Чекмагуш", "Чишмы", "Шаран", "Языково", "Архангельское", "Верхнеяркеево", "Кандры",
+  "Николо-Березовка", "Павловка", "Нурлино", "Серафимовский", "Чесноковка", "Зубово",
+];
+
+export function inBashkortostan(city: string) {
+  const n = normalizeTitle(city);
+  return RB_SETTLEMENTS.some((c) => normalizeTitle(c) === n);
 }
 
 /** Возраст «12+», «6 +», 16 → число; допустимые значения ТЗ: 0, 6, 12, 16, 18. */
