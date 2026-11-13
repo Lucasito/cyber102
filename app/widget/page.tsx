@@ -56,7 +56,7 @@ export default async function Widget({ searchParams }: { searchParams: Promise<R
           Вся афиша культуры Башкортостана →
         </a>
       )}
-      <p className="mt-2 text-center text-[11px] text-stone-400">Неофициальный сервис. Данные — из открытых источников, у каждого события есть ссылка на источник.</p>
+      <p className="mt-2 text-center text-[11px] text-stone-500">Неофициальный сервис. Данные — из открытых источников, у каждого события есть ссылка на источник.</p>
     </main>
   );
 }

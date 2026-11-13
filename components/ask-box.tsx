@@ -46,7 +46,7 @@ function Typing({ t }: { t: T }) {
         <p className="mt-1.5 text-sm text-stone-500" role="status">
           {t[stage]}
           {seconds >= 8 && (
-            <span className="ml-1 tabular-nums text-stone-400">
+            <span className="ml-1 tabular-nums text-stone-500">
               {seconds} {t.seconds}
             </span>
           )}
@@ -167,7 +167,7 @@ export function AskBox({ examples, lang, t, chatEvents = 4 }: { examples: string
         maxLength={500}
         placeholder={started ? t.chatPlaceholder : t.askPlaceholder}
         aria-label={t.chatPlaceholder}
-        className={`block max-h-40 w-full resize-none bg-transparent text-base outline-none placeholder:text-stone-400 focus-visible:outline-none [field-sizing:content] ${started ? "min-h-11 py-2.5 pr-12 pl-4" : "min-h-12 py-3 pr-14 pl-11"}`}
+        className={`block max-h-40 w-full resize-none bg-transparent text-base outline-none placeholder:text-stone-500 focus-visible:outline-none [field-sizing:content] ${started ? "min-h-11 py-2.5 pr-12 pl-4" : "min-h-12 py-3 pr-14 pl-11"}`}
       />
       <button
         type="submit"

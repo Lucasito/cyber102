@@ -1,0 +1,43 @@
+{
+  "events": [
+    {
+      "id": "s-1",
+      "title": "Пример: вечер камерной музыки",
+      "category": "концерт",
+      "date_start": "2027-03-14T19:00:00+05:00",
+      "duration_min": 120,
+      "city": "Уфа",
+      "venue": "Пример-зал",
+      "address": "ул. Примерная, 1",
+      "price_min": 300,
+      "price_max": 800,
+      "age_limit": 12,
+      "tags": ["музыка", "вечер"],
+      "ticket_url": "https://example.org/tickets/1",
+      "source_url": "https://example.org/events/1"
+    },
+    {
+      "id": "s-2",
+      "title": "Пример: выставка графики",
+      "category": "выставка",
+      "date_start": "2027-03-01T10:00:00+05:00",
+      "date_end": "2027-03-30T18:00:00+05:00",
+      "city": "Стерлитамак",
+      "venue": "Пример-галерея",
+      "is_free": true,
+      "age_limit": 0,
+      "source_url": "https://example.org/events/2"
+    },
+    {
+      "id": "s-5",
+      "title": "Пример: отменённый концерт",
+      "category": "концерт",
+      "date_start": "2027-03-16T19:00:00+05:00",
+      "city": "Уфа",
+      "venue": "Пример-зал",
+      "price_min": 600,
+      "source_url": "https://example.org/events/5",
+      "status": "отменено"
+    }
+  ]
+}

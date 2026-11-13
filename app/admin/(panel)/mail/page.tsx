@@ -15,8 +15,11 @@ export default async function AdminMail() {
       />
       <Section>
         <div className="mb-5 rounded-2xl bg-amber-50 p-4 text-sm text-amber-900">
-          Хостинг сервера закрыл почтовые порты (25, 465, 587), поэтому письма уходят через <b>посредника</b> — Cloudflare Worker из{" "}
-          <code>docs/mail-relay-worker.js</code>: он сам подключается к SMTP. Без посредника работает только SMTP на порту 2525 (SendPulse, Mailgun, SendGrid).
+          Хостинг сервера закрыл почтовые порты (25, 465, 587), поэтому письма уходят через <b>посредника</b> — Cloudflare Worker (
+          <a href="/admin/files/mail-relay-worker.js" className="underline">
+            скачать код воркера
+          </a>
+          , инструкция по установке — в начале файла): он сам подключается к SMTP. Без посредника работает только SMTP на порту 2525 (SendPulse, Mailgun, SendGrid).
         </div>
         <SettingsForm action={saveMail} extra={<ActionButton action={testMail}>Отправить тестовое письмо себе</ActionButton>}>
           <Toggle name="enabled" defaultChecked={mail.enabled} label="Отправлять письма" />

@@ -40,7 +40,7 @@ export default async function AdminBots() {
                   <option value="webhook">Webhook (Telegram сам присылает сообщения)</option>
                 </Select>
               </Field>
-              <Field label="Адрес API Telegram" hint="Зеркало api.telegram.org — Cloudflare Worker из docs/telegram-proxy-worker.js. Пусто — https://api.telegram.org (с сервера в РФ недоступен)">
+              <Field label="Адрес API Telegram" hint={<>Зеркало api.telegram.org на Cloudflare Workers (<a href="/admin/files/telegram-proxy-worker.js" className="underline">скачать код воркера</a>, инструкция — в начале файла). Пусто — https://api.telegram.org (с сервера в РФ недоступен)</>}>
                 <Input name="apiUrl" defaultValue={tg.apiUrl} placeholder="https://api.telegram.org" />
               </Field>
             </div>

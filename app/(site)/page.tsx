@@ -54,6 +54,31 @@ export default async function Home({ searchParams }: { searchParams: Promise<SP>
   const parsed = parseEventFilter({ ...sp, limit: String(limit) });
   const [result, options, site] = await Promise.all([parsed.success ? searchEvents(parsed.data) : null, filterOptions(), getSettings("site")]);
 
+  // Пусто по фильтрам — какое условие мешает (ТЗ 6.1): снимаем по одному и считаем, сколько найдётся
+  const RELAX: [DictKey, Record<string, null>][] = [
+    ["relaxDates", { dateFrom: null, dateTo: null }],
+    ["relaxCategory", { category: null }],
+    ["relaxCity", { city: null }],
+    ["relaxPrice", { priceMax: null, free: null }],
+    ["relaxAge", { age: null }],
+    ["relaxQuery", { q: null }],
+    ["relaxPushkin", { pushkin: null }],
+    ["relaxAccess", { access: null }],
+    ["relaxNear", { near: null, radius: null }],
+  ];
+  const relax =
+    result && !result.items.length
+      ? (
+          await Promise.all(
+            RELAX.filter(([, patch]) => Object.keys(patch).some((k) => sp[k])).map(async ([label, patch]) => {
+              const f = parseEventFilter({ ...sp, ...Object.fromEntries(Object.keys(patch).map((k) => [k, undefined])), limit: "1" });
+              const n = f.success ? (await searchEvents(f.data)).total : 0;
+              return { label, href: href(sp, patch), n };
+            }),
+          )
+        ).filter((r) => r.n > 0)
+      : [];
+
   const isPreset = (k: keyof typeof presets) => sp.dateFrom === presets[k].dateFrom && sp.dateTo === presets[k].dateTo;
   const dateChip = (k: keyof typeof presets, label: string) => (
     <Chip href={href(sp, isPreset(k) ? { dateFrom: null, dateTo: null } : presets[k])} active={isPreset(k)}>
@@ -138,18 +163,18 @@ export default async function Home({ searchParams }: { searchParams: Promise<SP>
             {sp.view && <input type="hidden" name="view" value={sp.view} />}
             <label className="sr-only" htmlFor="f-q">{t("qPlaceholder")}</label>
             <input id="f-q" name="q" defaultValue={sp.q} placeholder={t("qPlaceholder")} className="rounded-xl bg-stone-100 px-3 py-2.5 outline-none focus:ring-2 focus:ring-[var(--brand)]" />
-            <label className="sr-only" htmlFor="f-city">Город</label>
+            <label className="sr-only" htmlFor="f-city">{t("labelCity")}</label>
             <select id="f-city" name="city" defaultValue={sp.city ?? ""} className="rounded-xl bg-stone-100 px-3 py-2.5 outline-none focus:ring-2 focus:ring-[var(--brand)]">
               <option value="">{t("allCities")}</option>
               {options.cities.map((c) => (
                 <option key={c}>{c}</option>
               ))}
             </select>
-            <label className="sr-only" htmlFor="f-from">С даты</label>
+            <label className="sr-only" htmlFor="f-from">{t("labelFrom")}</label>
             <input id="f-from" name="dateFrom" type="date" defaultValue={sp.dateFrom} className="rounded-xl bg-stone-100 px-3 py-2.5 outline-none focus:ring-2 focus:ring-[var(--brand)]" />
-            <label className="sr-only" htmlFor="f-to">По дату</label>
+            <label className="sr-only" htmlFor="f-to">{t("labelTo")}</label>
             <input id="f-to" name="dateTo" type="date" defaultValue={sp.dateTo} className="rounded-xl bg-stone-100 px-3 py-2.5 outline-none focus:ring-2 focus:ring-[var(--brand)]" />
-            <label className="sr-only" htmlFor="f-price">Цена до</label>
+            <label className="sr-only" htmlFor="f-price">{t("labelPrice")}</label>
             <input id="f-price" name="priceMax" type="number" min={0} step={100} defaultValue={sp.priceMax} placeholder={t("priceTo")} className="rounded-xl bg-stone-100 px-3 py-2.5 outline-none focus:ring-2 focus:ring-[var(--brand)]" />
             <button className="rounded-xl bg-stone-900 px-5 py-2.5 font-medium text-white hover:bg-stone-700">{t("show")}</button>
           </form>
@@ -228,9 +253,16 @@ export default async function Home({ searchParams }: { searchParams: Promise<SP>
         ) : (
           <div className="rounded-2xl border border-dashed border-black/15 px-6 py-14 text-center">
             <p className="font-medium">{hasFilters ? t("nothingFound") : t("emptyAfisha")}</p>
-            <p className="mt-1 text-sm text-stone-500">
-              {hasFilters ? t("nothingHint") : t("emptyHint")}
-            </p>
+            <p className="mt-1 text-sm text-stone-500">{hasFilters ? (relax.length ? t("relaxLead") : t("nothingHint")) : t("emptyHint")}</p>
+            {relax.length > 0 && (
+              <div className="mt-4 flex flex-wrap justify-center gap-2">
+                {relax.map((r) => (
+                  <Link key={r.label} href={r.href} scroll={false} className="rounded-full bg-white px-3.5 py-1.5 text-sm ring-1 ring-black/10 hover:ring-black/30">
+                    {t(r.label)} — {r.n}
+                  </Link>
+                ))}
+              </div>
+            )}
           </div>
         )}
       </section>

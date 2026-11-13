@@ -103,7 +103,7 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
         <div className={`relative aspect-[16/10] overflow-hidden rounded-3xl ${CATEGORY_STYLE[e.category?.slug ?? ""] ?? DEFAULT_STYLE}`}>
           {e.imageUrl ? (
             // eslint-disable-next-line @next/next/no-img-element -- внешние картинки источников
-            <img src={e.imageUrl} alt="" className="h-full w-full object-cover" />
+            <img src={e.imageUrl} alt={`Афиша: ${e.title}`} className="h-full w-full object-cover" />
           ) : (
             // eslint-disable-next-line @next/next/no-img-element -- локальная SVG-иллюстрация без растровой оптимизации
             <img src={illustrationFor(e.category?.slug)} alt="" className="h-full w-full object-cover" />
