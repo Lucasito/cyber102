@@ -878,29 +878,28 @@
       "cheaper": true
     },
     {
-      "id": "tool-venue-philharmonic",
+      "id": "tool-venue-garmonia",
       "type": "tool",
       "dialog": [
-        "Что идёт в филармонии?"
+        "Что идёт в концертном зале «Гармония»?"
       ],
       "tool": "get_venue_schedule",
       "constraints": {
-        "venue": "филармон"
+        "venue": "гармон"
       }
     },
     {
       "id": "tool-venue-puppet-weekend",
       "type": "tool",
       "dialog": [
-        "Расписание кукольного театра на выходные"
+        "Расписание кукольного театра"
       ],
       "tool": [
         "get_venue_schedule",
         "search_events"
       ],
       "constraints": {
-        "venue": "кукол",
-        "date": "weekend"
+        "venue": "кукол"
       }
     },
     {

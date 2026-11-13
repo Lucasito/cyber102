@@ -122,12 +122,13 @@ async function findSimilarTool(args: Record<string, unknown>, limit: number, exc
 async function venueScheduleTool(args: Record<string, unknown>, limit: number): Promise<ToolResult> {
   const venue = str(args.venue);
   if (!venue) return { ok: false, error: "не указана площадка" };
-  // Площадка по названию: вхождение целиком, иначе все значимые слова («филармонии» → «филармон»)
+  // Площадка по названию: вхождение целиком, иначе все значимые слова по основе из 5 букв
+  // («кукольного» → «кукол», «гармонии» → «гармо»)
   const words = venue
     .toLowerCase()
     .split(/[^\p{L}\d]+/u)
-    .filter((w) => w.length >= 4 && !/^(театр|музе|центр)/.test(w))
-    .map((w) => (w.length > 5 ? w.slice(0, -2) : w));
+    .filter((w) => w.length >= 4 && !/^(театр|музе|центр|зал|концертн)/.test(w))
+    .map((w) => w.slice(0, 5));
   let venues = await db.venue.findMany({ where: { name: { contains: venue, mode: "insensitive" } }, select: { id: true, name: true, city: true } });
   if (!venues.length && words.length) {
     venues = await db.venue.findMany({ where: { AND: words.map((w) => ({ name: { contains: w, mode: "insensitive" as const } })) }, select: { id: true, name: true, city: true } });

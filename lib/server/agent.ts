@@ -273,6 +273,11 @@ async function agentCore(
     delete model.dateFrom;
     delete model.dateTo;
   }
+  // Город — только если он назван в репликах (по началу слова: «в уфе», «стерлитакмае»)
+  if (typeof model.city === "string") {
+    const stem = model.city.toLowerCase().replace(/ё/g, "е").slice(0, Math.min(5, model.city.length - 1));
+    if (!userMsgs.some((m) => m.content.toLowerCase().replace(/ё/g, "е").includes(stem))) delete model.city;
+  }
   if (process.env.AI_DEBUG) console.log("[agent] rules:", JSON.stringify(rules));
   const merged: Record<string, unknown> = { ...model, ...rules };
   steps.push({ step: "rules", rules, merged: { ...merged } });
@@ -297,9 +302,13 @@ async function agentCore(
     return eventReply(r, title, P, followupSuggestions, false);
   }
   const specific = tool.name !== "search_events" || SPECIFIC_KEYS.some((k) => merged[k] != null && merged[k] !== "");
+  // Условия, найденные кодом (правила, прошлая подборка), — без догадок модели
+  const byCode = { ...(follow?.set ?? {}), ...rules } as Record<string, unknown>;
+  const specificByCode = tool.name !== "search_events" || SPECIFIC_KEYS.some((k) => byCode[k] != null && byCode[k] !== "");
 
-  // Реплика не про события («привет») — представляемся и задаём уточняющий вопрос
-  if (intent.clarify && !specific) {
+  // Реплика не про события («привет», «скучно») — модель просит уточнить, а правила ничего не нашли:
+  // представляемся и задаём вопрос, а не ищем по догадкам модели
+  if (intent.clarify && !specificByCode) {
     steps.push({ step: "clarify", reason: "реплика не про события" });
     return { text: `${P.hello} ${clarifyText}`, events: [], suggestions: clarifySuggestions, clarify: true };
   }
@@ -458,7 +467,11 @@ function chooseTool(text: string, intent: Intent, merged: Record<string, unknown
   const similar = text.match(SIMILAR_TITLE_RE)?.[1]?.trim();
   if (similar) return { name: "find_similar", args: { title: quoted ?? similar }, by: "rules" };
   if (SCHEDULE_RE.test(t)) {
-    const venue = typeof m.venue === "string" && m.venue ? m.venue : text.match(/(?:в|на)\s+(.{3,60}?)(?:\s+(?:сегодня|завтра|на|в|до)\s|[?.!]|$)/i)?.[1];
+    const venue =
+      typeof m.venue === "string" && m.venue
+        ? m.venue
+        : (text.match(/расписани\S*\s+(.{3,60}?)(?:\s+(?:сегодня|завтра|на|в|до)\s|[?.!]|$)/i)?.[1] ??
+          text.match(/(?:в|на)\s+(.{3,60}?)(?:\s+(?:сегодня|завтра|на|в|до)\s|[?.!]|$)/i)?.[1]);
     if (venue) return { name: "get_venue_schedule", args: { venue }, by: typeof m.venue === "string" && m.venue ? "model" : "rules" };
   }
   // Модель выбрала другой инструмент — только с обязательными аргументами
