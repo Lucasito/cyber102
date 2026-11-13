@@ -175,10 +175,11 @@ export async function saveMap(_: ActionState, f: FormData): Promise<ActionState>
   await requireAdmin();
   try {
     const old = await getSettings("map");
-    const provider = text(f, "provider") === "yandex" ? "yandex" : "osm";
+    const p = text(f, "provider");
+    const provider = p === "yandex" || p === "osm" ? p : "openfreemap";
     const yandexKey = secret(f, "yandexKey", old.yandexKey);
     await saveSettings("map", { provider, yandexKey });
-    return done(provider === "yandex" && !yandexKey ? "Сохранено, но без ключа показывается OpenStreetMap" : "Настройки карты сохранены");
+    return done(provider === "yandex" && !yandexKey ? "Сохранено, но без ключа показывается OpenFreeMap" : "Настройки карты сохранены");
   } catch (e) {
     return fail(e);
   }

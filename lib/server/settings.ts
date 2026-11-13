@@ -73,7 +73,7 @@ export const settingsSchema = {
     extraSettlements: z.array(z.string().trim().max(60)).max(500).default([]),
   }),
   map: z.object({
-    provider: z.enum(["osm", "yandex"]).default("osm"),
+    provider: z.enum(["openfreemap", "osm", "yandex"]).default("openfreemap"),
     // Ключ JavaScript API Яндекс Карт (developer.tech.yandex.ru). Публичный — виден в браузере;
     // в кабинете Яндекса ограничьте его по адресу сайта (HTTP Referer)
     yandexKey: str,
@@ -164,10 +164,11 @@ export async function telegramConfig() {
   };
 }
 
-/** Какую карту показывать на сайте. Яндекс — только если выбран и задан ключ, иначе OpenStreetMap. */
-export async function mapConfig(): Promise<{ provider: "osm" | "yandex"; yandexKey?: string }> {
+/** Какую карту показывать на сайте. Яндекс — только если выбран и задан ключ, иначе OpenFreeMap. */
+export async function mapConfig(): Promise<{ provider: "openfreemap" | "osm" | "yandex"; yandexKey?: string }> {
   const s = await getSettings("map");
-  return s.provider === "yandex" && s.yandexKey ? { provider: "yandex", yandexKey: s.yandexKey } : { provider: "osm" };
+  if (s.provider === "yandex") return s.yandexKey ? { provider: "yandex", yandexKey: s.yandexKey } : { provider: "openfreemap" };
+  return { provider: s.provider };
 }
 
 /** Маска секрета для показа в админке: «abcd…wxyz». */

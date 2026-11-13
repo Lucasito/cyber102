@@ -15,8 +15,9 @@ export default async function AdminMap() {
           <div className="grid gap-4 sm:grid-cols-2">
             <Field label="Карта">
               <Select name="provider" defaultValue={map.provider}>
-                <option value="osm">OpenStreetMap (бесплатно, без ключа)</option>
-                <option value="yandex">Яндекс Карты (нужен ключ)</option>
+                <option value="openfreemap">OpenFreeMap (бесплатно, без ключа и лимитов) — по умолчанию</option>
+                <option value="osm">OpenStreetMap, простые плитки (бесплатно, без ключа)</option>
+                <option value="yandex">Яндекс Карты (нужен ключ, бесплатно — 100 запросов в сутки)</option>
               </Select>
             </Field>
             <Field label="Ключ JavaScript API Яндекс Карт" hint="developer.tech.yandex.ru. Ключ виден в браузере — ограничьте его адресом сайта (HTTP Referer).">
@@ -24,7 +25,8 @@ export default async function AdminMap() {
             </Field>
           </div>
           <p className="text-xs text-stone-500">
-            Сейчас на сайте: {map.provider === "yandex" && map.yandexKey ? "Яндекс Карты" : "OpenStreetMap"}. Если ключ Яндекса не подойдёт, сайт сам покажет OpenStreetMap.
+            Сейчас на сайте: {map.provider === "yandex" && map.yandexKey ? "Яндекс Карты" : map.provider === "osm" ? "OpenStreetMap" : "OpenFreeMap"}. Если карта Яндекса не
+            загрузится (неверный ключ, исчерпан лимит), сайт сам покажет OpenFreeMap; если недоступен и он — OpenStreetMap.
           </p>
         </SettingsForm>
       </Section>

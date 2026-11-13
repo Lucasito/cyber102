@@ -1,22 +1,25 @@
 "use client";
 
 import "leaflet/dist/leaflet.css";
+import "maplibre-gl/dist/maplibre-gl.css";
 import { useEffect, useRef } from "react";
 
-// Карта площадок. Два поставщика (выбор в админке):
-//  • OpenStreetMap — Leaflet + плитки OSM, бесплатно, без ключа (по умолчанию);
-//  • Яндекс Карты — JavaScript API v3, нужен ключ (developer.tech.yandex.ru).
+// Карта площадок. Поставщик выбирается в админке:
+//  • OpenFreeMap — векторная карта на данных OpenStreetMap (MapLibre), бесплатно, без ключа и лимитов (по умолчанию);
+//  • OpenStreetMap — Leaflet + растровые плитки OSM, бесплатно, без ключа (запасной вариант);
+//  • Яндекс Карты — JavaScript API v3, нужен ключ (developer.tech.yandex.ru), бесплатно — 100 запросов в сутки.
+// Не загрузился Яндекс — показываем OpenFreeMap; не загрузился OpenFreeMap — OpenStreetMap.
 // Точки — кружки цвета бренда; по нажатию — события площадки со ссылками.
 
 export type MapPoint = { lat: number; lon: number; title: string; lines: { text: string; href?: string }[] };
-export type MapConfig = { provider: "osm" | "yandex"; yandexKey?: string };
+export type MapConfig = { provider: "openfreemap" | "osm" | "yandex"; yandexKey?: string };
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]!);
 const popupHtml = (p: MapPoint) =>
   `<b>${esc(p.title)}</b>` + p.lines.map((l) => `<br>${l.href ? `<a href="${esc(l.href)}">${esc(l.text)}</a>` : esc(l.text)}`).join("");
 const UFA = { lat: 54.7348, lon: 55.9579 };
 
-export function VenueMap({ points, className = "h-80", me, config = { provider: "osm" } }: { points: MapPoint[]; className?: string; me?: { lat: number; lon: number } | null; config?: MapConfig }) {
+export function VenueMap({ points, className = "h-80", me, config = { provider: "openfreemap" } }: { points: MapPoint[]; className?: string; me?: { lat: number; lon: number } | null; config?: MapConfig }) {
   const ref = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -24,7 +27,7 @@ export function VenueMap({ points, className = "h-80", me, config = { provider: 
     if (!el) return;
     let cleanup = () => {};
     let cancelled = false;
-    const run = config.provider === "yandex" && config.yandexKey ? yandexMap : osmMap;
+    const run = config.provider === "yandex" && config.yandexKey ? yandexMap : config.provider === "osm" ? osmMap : openFreeMap;
     void run(el, points, me ?? null, config.yandexKey ?? "").then((c) => {
       if (cancelled) c();
       else cleanup = c;
@@ -36,6 +39,79 @@ export function VenueMap({ points, className = "h-80", me, config = { provider: 
   }, [points, me, config.provider, config.yandexKey]);
 
   return <div ref={ref} className={`relative z-0 w-full overflow-hidden rounded-3xl ring-1 ring-black/5 ${className}`} role="region" aria-label="Карта" />;
+}
+
+// ───────── OpenFreeMap (MapLibre) ─────────
+
+const OFM_STYLE = "https://tiles.openfreemap.org/styles/liberty";
+
+/** Метка для MapLibre: внешний элемент двигает сама библиотека (transform), кружок — внутри. */
+function pin(color: string, size: number, title: string) {
+  const outer = document.createElement("div");
+  outer.title = title;
+  outer.style.cssText = "cursor:pointer";
+  const d = document.createElement("div");
+  d.style.cssText = `width:${size}px;height:${size}px;border-radius:50%;background:${color};border:2px solid #fff;box-shadow:0 1px 4px rgba(0,0,0,.3)`;
+  outer.appendChild(d);
+  return outer;
+}
+
+async function openFreeMap(el: HTMLDivElement, points: MapPoint[], me: { lat: number; lon: number } | null): Promise<() => void> {
+  let maplibregl: typeof import("maplibre-gl");
+  try {
+    maplibregl = await import("maplibre-gl");
+  } catch {
+    return osmMap(el, points, me);
+  }
+  const all: [number, number][] = [...points.map((p) => [p.lon, p.lat] as [number, number]), ...(me ? [[me.lon, me.lat] as [number, number]] : [])];
+  const map = new maplibregl.Map({
+    container: el,
+    style: OFM_STYLE,
+    center: all[0] ?? [UFA.lon, UFA.lat],
+    zoom: all.length === 1 ? 14 : 10,
+    scrollZoom: false, // как у прежней карты: колесо мыши прокручивает страницу, а не масштаб
+    attributionControl: { compact: true },
+  });
+  map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-left");
+  if (all.length > 1) {
+    const lons = all.map((c) => c[0]);
+    const lats = all.map((c) => c[1]);
+    map.fitBounds(
+      [
+        [Math.min(...lons), Math.min(...lats)],
+        [Math.max(...lons), Math.max(...lats)],
+      ],
+      { padding: 40, maxZoom: 15, animate: false },
+    );
+  }
+  for (const p of points) {
+    new maplibregl.Marker({ element: pin("#0b7a55", 18, p.title) })
+      .setLngLat([p.lon, p.lat])
+      .setPopup(new maplibregl.Popup({ offset: 12, maxWidth: "260px" }).setHTML(popupHtml(p)))
+      .addTo(map);
+  }
+  if (me) new maplibregl.Marker({ element: pin("#1565c0", 14, "Вы здесь") }).setLngLat([me.lon, me.lat]).addTo(map);
+
+  // Стиль или плитки не загрузились за 10 с (сервис недоступен) — показываем OpenStreetMap
+  // (событие error не годится: оно приходит и на одну незагрузившуюся плитку, а карта при этом работает)
+  const ok = await new Promise<boolean>((resolve) => {
+    const timer = setTimeout(() => resolve(false), 10_000);
+    map.once("load", () => {
+      clearTimeout(timer);
+      // Подписи только по-русски: стиль по умолчанию пишет «Ufa Уфа» — латиницу и местное название
+      for (const layer of map.getStyle().layers ?? []) {
+        if (layer.type === "symbol" && map.getLayoutProperty(layer.id, "text-field") != null) {
+          map.setLayoutProperty(layer.id, "text-field", ["coalesce", ["get", "name:ru"], ["get", "name"]]);
+        }
+      }
+      resolve(true);
+    });
+  });
+  if (!ok) {
+    map.remove();
+    return osmMap(el, points, me);
+  }
+  return () => map.remove();
 }
 
 // ───────── OpenStreetMap (Leaflet) ─────────
@@ -101,8 +177,8 @@ async function yandexMap(el: HTMLDivElement, points: MapPoint[], me: { lat: numb
   try {
     ymaps3 = await loadYmaps(key);
   } catch {
-    // Ключ неверный или API недоступен — показываем OpenStreetMap, чтобы карта всё равно была
-    return osmMap(el, points, me);
+    // Ключ неверный, лимит исчерпан или API недоступен — показываем OpenFreeMap, чтобы карта всё равно была
+    return openFreeMap(el, points, me);
   }
   const { YMap, YMapDefaultSchemeLayer, YMapDefaultFeaturesLayer, YMapMarker } = ymaps3;
   // В API Яндекса координаты — [долгота, широта]

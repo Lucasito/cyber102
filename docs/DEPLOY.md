@@ -84,11 +84,14 @@ cd /opt/afisha && docker compose -f docker-compose.prod.yml restart app      # �
 | GigaChat (Сбер) | ИИ-помощник | в админке |
 | MAX Bot API | бот MAX | в админке |
 | Telegram Bot API через Cloudflare Worker | бот Telegram | в админке |
-| tile.openstreetmap.org | плитки карты (из браузера посетителя) | не нужен, обязательна подпись © OpenStreetMap |
+| tiles.openfreemap.org | карта по умолчанию (из браузера посетителя) | не нужен, без лимитов; подпись OpenFreeMap © OpenMapTiles, данные © OpenStreetMap |
+| tile.openstreetmap.org | запасные плитки карты | не нужен, обязательна подпись © OpenStreetMap |
+| nominatim.openstreetmap.org | координаты площадок и проверка региона (с сервера) | не нужен, не чаще 1 запроса в секунду |
 | Яндекс Карты, JavaScript API v3 | карта, если выбрана в админке | в админке («Карта»), ограничить по HTTP Referer |
 
-Плитки CARTO сначала использовались для карты, но стали требовать ключ — заменены на OpenStreetMap. При
-большой нагрузке правила OSM требуют свой сервер плиток или коммерческого поставщика.
+Карта по умолчанию — OpenFreeMap (без лимитов). Плитки tile.openstreetmap.org — только запасной вариант: правила
+OSM не рассчитаны на большую нагрузку. Для полной независимости от внешних сервисов можно разместить карту
+Башкортостана на своём сервере (файл PMTiles с данными OSM).
 
 ## Известные подвохи
 
