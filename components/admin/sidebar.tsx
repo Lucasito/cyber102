@@ -1,6 +1,6 @@
 "use client";
 
-import { BarChart3, Bot, Brain, Database, Globe, LayoutDashboard, LogOut, Mail, Map, Menu, SlidersHorizontal, UserCog, Users, X } from "lucide-react";
+import { BarChart3, Bot, Brain, CalendarDays, Database, FileUp, Globe, History, LayoutDashboard, LogOut, Mail, Map, Menu, ShieldCheck, SlidersHorizontal, UserCog, Users, X } from "lucide-react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useState } from "react";
@@ -19,12 +19,11 @@ const GROUPS: { title: string; items: Item[] }[] = [
   {
     title: "Работа",
     items: [
-      {
-        href: "/admin",
-        label: "Обзор",
-        icon: LayoutDashboard,
-        roles: ["ADMIN", "MODERATOR"],
-      },
+      { href: "/admin", label: "Обзор", icon: LayoutDashboard, roles: ["ADMIN", "MODERATOR"] },
+      { href: "/admin/events", label: "События", icon: CalendarDays, roles: ["ADMIN", "MODERATOR"] },
+      { href: "/admin/moderation", label: "Модерация", icon: ShieldCheck, roles: ["ADMIN", "MODERATOR"] },
+      { href: "/admin/import", label: "Импорт", icon: FileUp, roles: ["ADMIN", "MODERATOR"] },
+      { href: "/admin/audit", label: "Журнал", icon: History, roles: ["ADMIN", "MODERATOR"] },
       {
         href: "/admin/analytics",
         label: "Аналитика",

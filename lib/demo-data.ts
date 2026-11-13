@@ -1,6 +1,7 @@
 // Тестовые события — для проверки сайта, API, виджета и ботов, пока нет реальных источников.
 // Все помечены источником "demo"; пока они есть, сайт показывает плашку «Тестовые данные».
 // Используется скриптом scripts/seed-demo.mts и кнопкой в админке.
+import { normalizeTitle } from "./server/normalize";
 import type { PrismaClient } from "@/generated/prisma/client";
 
 export const DEMO_SOURCE = "demo";
@@ -170,9 +171,11 @@ export async function seedDemo(db: PrismaClient) {
         pushkinCard: !!pmin && PUSHKIN_GENRES.includes(e.c) && (e.a ?? 0) >= 6,
         accessibility: ACCESS[e.v] ?? [],
         dedupKey: `demo:${e.t}:${e.v}`,
+        normalizedTitle: normalizeTitle(e.t),
+        verifiedAt: new Date(),
         categoryId: e.c ? cat[e.c] : null,
         venueId: venue[e.v],
-        sources: { create: { source: DEMO_SOURCE, url: `https://example.invalid/demo/${encodeURIComponent(e.t)}` } },
+        sources: { create: { source: DEMO_SOURCE, sourceType: "MANUAL", url: `https://example.invalid/demo/${encodeURIComponent(e.t)}` } },
       },
     });
   }

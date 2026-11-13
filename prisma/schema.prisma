@@ -1,5 +1,4 @@
-// Афиша культуры Башкортостана — черновая модель данных.
-// Уточняется после выхода полной документации задачи.
+// Афиша культуры Башкортостана — модель данных (схема события — ТЗ, раздел 8.1; соответствие полей — docs/ARCHITECTURE.md).
 //
 // Принципы:
 //  • Только реальные события: у каждого есть источник (sourceUrl) — выдуманных нет.
@@ -14,6 +13,25 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+/**
+ * Публикация: черновик не виден посетителям (ТЗ 6.1: «опубликовано», «черновик»; «отменено» — EventStatus).
+ */
+enum Publication {
+  DRAFT
+  PUBLISHED
+}
+
+/**
+ * Тип источника (ТЗ 8.1 source_type).
+ */
+enum SourceType {
+  MANUAL // ручной ввод в админке
+  IMPORT // файл CSV/JSON
+  RSS
+  API
+  PAGE // страница учреждения
 }
 
 enum EventStatus {
@@ -45,44 +63,58 @@ model Venue {
 }
 
 model Event {
-  id            String        @id @default(cuid())
-  title         String
-  description   String?
-  startsAt      DateTime
-  endsAt        DateTime?
-  status        EventStatus   @default(SCHEDULED)
-  priceMin      Int?
-  priceMax      Int?
-  ageLimit      Int? // возрастное ограничение: 0, 6, 12, 16, 18
-  imageUrl      String?
-  ticketUrl     String?
-  pushkinCard   Boolean       @default(false) // можно оплатить Пушкинской картой
-  accessibility String[]      @default([]) // доступная среда: wheelchair, hearing, vision
-  dedupKey      String        @unique
-  categoryId    String?
-  category      Category?     @relation(fields: [categoryId], references: [id])
-  venueId       String?
-  venue         Venue?        @relation(fields: [venueId], references: [id])
-  sources       EventSource[]
-  reminders     Reminder[]
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id               String        @id @default(cuid())
+  title            String
+  description      String?
+  startsAt         DateTime
+  endsAt           DateTime?
+  status           EventStatus   @default(SCHEDULED)
+  priceMin         Int?
+  priceMax         Int?
+  ageLimit         Int? // возрастное ограничение: 0, 6, 12, 16, 18
+  imageUrl         String?
+  ticketUrl        String?
+  pushkinCard      Boolean       @default(false) // можно оплатить Пушкинской картой
+  accessibility    String[]      @default([]) // доступная среда: wheelchair, hearing, vision
+  dedupKey         String        @unique
+  normalizedTitle  String        @default("") // для дедупликации и поиска (ТЗ 8.1)
+  tags             String[]      @default([]) // метки: джаз, дети, башкирский язык…
+  language         String? // язык мероприятия, если указан
+  durationMin      Int? // длительность, если известна
+  orgUrl           String? // организатор (билеты — ticketUrl)
+  publication      Publication   @default(PUBLISHED)
+  needsReview      Boolean       @default(false) // спорная карточка — в очередь модерации
+  reviewNote       String? // почему спорная
+  originalStartsAt DateTime? // прежняя дата, если событие перенесено
+  verifiedAt       DateTime? // когда источник проверен
+  confidence       Float? // уверенность извлечения 0–1
+  categoryId       String?
+  category         Category?     @relation(fields: [categoryId], references: [id])
+  venueId          String?
+  venue            Venue?        @relation(fields: [venueId], references: [id])
+  sources          EventSource[]
+  reminders        Reminder[]
+  createdAt        DateTime      @default(now())
+  updatedAt        DateTime      @updatedAt
 
   @@index([startsAt])
   @@index([status, startsAt])
+  @@index([publication, needsReview])
 }
 
 /**
  * Откуда событие взято: подтверждение достоверности и основа дедупликации.
  */
 model EventSource {
-  id         String   @id @default(cuid())
+  id         String     @id @default(cuid())
   eventId    String
-  event      Event    @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  event      Event      @relation(fields: [eventId], references: [id], onDelete: Cascade)
   source     String // код источника: culture_rb, pushkin_card, theatre_site …
+  sourceType SourceType @default(IMPORT)
   externalId String?
   url        String
-  fetchedAt  DateTime @default(now())
+  sourceHash String? // хеш исходной записи — повторная загрузка той же записи ничего не меняет
+  fetchedAt  DateTime   @default(now())
 
   @@unique([source, url])
 }
@@ -199,4 +231,59 @@ model AdminToken {
   createdAt DateTime  @default(now())
 
   @@index([userId])
+}
+
+/**
+ * Сырая запись источника (строка файла, элемент RSS…) — хранится отдельно от нормализованного события,
+ * чтобы нормализацию можно было переиграть без повторного сбора (ТЗ 6.1).
+ */
+model RawRecord {
+  id         String     @id @default(cuid())
+  source     String
+  sourceType SourceType
+  hash       String // sha256 канонического JSON записи
+  payload    Json
+  importId   String?
+  import     ImportRun? @relation(fields: [importId], references: [id], onDelete: SetNull)
+  eventId    String? // событие, в которое запись нормализована (null — отклонена)
+  error      String? // почему отклонена
+  createdAt  DateTime   @default(now())
+
+  @@unique([source, hash])
+  @@index([eventId])
+}
+
+/**
+ * Загрузка файла: итог и отчёт по строкам (ТЗ 6.1 — «добавлено, обновлено, отклонено и почему»).
+ */
+model ImportRun {
+  id        String      @id @default(cuid())
+  fileName  String
+  source    String
+  total     Int         @default(0)
+  created   Int         @default(0)
+  updated   Int         @default(0)
+  unchanged Int         @default(0)
+  rejected  Int         @default(0)
+  report    Json // [{ row, result, reason?, eventId? }]
+  userLogin String?
+  records   RawRecord[]
+  createdAt DateTime    @default(now())
+}
+
+/**
+ * Журнал изменений: кто, когда и что изменил (ТЗ 6.1).
+ */
+model AuditLog {
+  id        String   @id @default(cuid())
+  userLogin String? // null — система (импорт по расписанию, фоновые задачи)
+  action    String // create | update | publish | unpublish | cancel | delete | import | approve …
+  entity    String // event | import | user | settings
+  entityId  String?
+  summary   String // кратко по-русски
+  diff      Json? // { поле: [было, стало] }
+  createdAt DateTime @default(now())
+
+  @@index([entity, entityId])
+  @@index([createdAt])
 }

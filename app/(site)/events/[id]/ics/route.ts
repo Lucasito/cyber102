@@ -8,7 +8,7 @@ const esc = (s: string) => s.replace(/[\\;,]/g, (c) => `\\${c}`).replace(/\r?\n/
 /** Файл .ics — добавить событие в календарь телефона или почты. */
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const e = await db.event.findUnique({ where: { id }, include: { venue: true } });
+  const e = await db.event.findFirst({ where: { id, publication: "PUBLISHED" }, include: { venue: true } });
   if (!e) return new Response("Not found", { status: 404 });
   const url = `${process.env.PUBLIC_URL || new URL(request.url).origin}/events/${e.id}`;
   const end = e.endsAt ?? new Date(e.startsAt.getTime() + 2 * 3600_000);

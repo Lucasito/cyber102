@@ -10,7 +10,7 @@ export default async function AdminData() {
   const [total, demo] = await Promise.all([db.event.count(), db.event.count({ where: { sources: { some: { source: DEMO_SOURCE } } } })]);
   return (
     <>
-      <PageTitle title="Данные" desc="События в базе. Импорт CSV/JSON и модерация — следующий этап (docs/PLAN.md)." />
+      <PageTitle title="Данные" desc="Тестовые события. Импорт, правка и модерация реальных событий — в разделах «События», «Импорт» и «Модерация»." />
       <Section title="Тестовые события" desc="Помечены источником demo. Пока они есть, на сайте видна плашка «Тестовые данные» (если она включена в разделе «Сайт»).">
         <div className="mb-5 grid grid-cols-2 gap-3 sm:w-1/2">
           <Stat label="всего событий" value={total} />

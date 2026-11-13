@@ -101,6 +101,7 @@ export async function searchEvents(f: FilterInput) {
     // По умолчанию — только актуальные: отменённые и прошедшие в выдачу не попадают (ТЗ 6.1, метрика 11).
     // Отменённое доступно по прямой ссылке с пометкой и по явному status=CANCELLED.
     status: f.status ?? { notIn: ["PAST", "CANCELLED"] },
+    publication: "PUBLISHED", // черновики и спорные карточки до проверки модератором не видны
     // Пересечение с периодом: событие началось до его конца и не закончилось до его начала.
     // Так в выборку попадают и идущие выставки. Без dateFrom период начинается «сейчас» (кроме поиска по статусу).
     startsAt: { lte: f.dateTo },
@@ -140,7 +141,7 @@ export type EventItem = Awaited<ReturnType<typeof searchEvents>>["items"][number
 
 /** Города и категории, где есть актуальные события, — для фильтров. */
 export async function filterOptions() {
-  const actual: Prisma.EventWhereInput = { status: { notIn: ["PAST", "CANCELLED"] }, startsAt: { gte: new Date(Date.now() - 86_400_000) } };
+  const actual: Prisma.EventWhereInput = { status: { notIn: ["PAST", "CANCELLED"] }, publication: "PUBLISHED", startsAt: { gte: new Date(Date.now() - 86_400_000) } };
   const [cities, categories] = await Promise.all([
     db.venue.findMany({ where: { events: { some: actual } }, distinct: ["city"], select: { city: true }, orderBy: { city: "asc" } }),
     db.category.findMany({ where: { events: { some: actual } }, orderBy: { name: "asc" } }),

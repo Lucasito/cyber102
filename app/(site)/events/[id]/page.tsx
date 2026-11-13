@@ -15,7 +15,8 @@ import { VenueMap } from "@/components/venue-map";
 
 export const dynamic = "force-dynamic";
 
-const getEvent = cache((id: string) => db.event.findUnique({ where: { id }, include: { venue: true, category: true, sources: true } }));
+// Черновик посетителям не показываем (как несуществующее); отменённое — показываем с пометкой
+const getEvent = cache((id: string) => db.event.findFirst({ where: { id, publication: "PUBLISHED" }, include: { venue: true, category: true, sources: true } }));
 
 export async function generateMetadata({ params }: { params: Promise<{ id: string }> }): Promise<Metadata> {
   const e = await getEvent((await params).id);
