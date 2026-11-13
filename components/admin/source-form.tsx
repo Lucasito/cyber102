@@ -55,7 +55,7 @@ export function SourceForm({ source }: { source?: Source }) {
       </div>
       <div className="space-y-2">
         <Toggle name="enabled" defaultChecked={source?.enabled ?? false} label="Собирать по расписанию" />
-        <Toggle name="autoPublish" defaultChecked={source?.autoPublish ?? false} label="Публиковать прошедшие проверку сразу (не для «RSS + ИИ»)" />
+        <Toggle name="autoPublish" defaultChecked={source?.autoPublish ?? false} label="Публиковать прошедшие проверку сразу (не для разбора ИИ)" />
         <p className="text-xs text-stone-500">
           Без автопубликации все новые события источника попадают в «Модерацию». Разобранное ИИ — всегда через модерацию. Существующие в афише события
           недоверенный источник не меняет.

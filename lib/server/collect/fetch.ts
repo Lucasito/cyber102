@@ -41,10 +41,25 @@ export async function fetchText(url: string, { timeoutMs = 20_000, accept = "*/*
   return { text, contentType, finalUrl: res.url || url };
 }
 
-/** HTML → текст для разбора: без скриптов, стилей, меню; пробелы схлопнуты. */
-export function htmlToText(html: string, max = 8000) {
+/**
+ * HTML → текст для разбора: без скриптов, стилей, меню; пробелы схлопнуты.
+ * linksBase — сохранить ссылки как «текст (адрес)» с полными адресами (для разбора страницы афиши ИИ).
+ */
+export function htmlToText(html: string, max = 8000, linksBase?: string) {
+  let src = html;
+  if (linksBase) {
+    src = src.replace(/<a\s[^>]*href=["']([^"'#]+)["'][^>]*>([\s\S]*?)<\/a>/gi, (_m, href: string, inner: string) => {
+      let abs = href;
+      try {
+        abs = new URL(href, linksBase).toString();
+      } catch {
+        // некорректная ссылка — оставляем как есть
+      }
+      return `${inner} (${abs}) `;
+    });
+  }
   return decodeEntities(
-    html
+    src
       .replace(/<(script|style|noscript|svg|nav|footer|header)[\s\S]*?<\/\1>/gi, " ")
       .replace(/<br\s*\/?>|<\/(p|div|li|h\d|tr)>/gi, "\n")
       .replace(/<[^>]+>/g, " "),

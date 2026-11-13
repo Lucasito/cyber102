@@ -375,7 +375,7 @@ export function extractJson(text: string): unknown {
 }
 
 /** Запрос к модели с ответом в виде JSON-объекта (разбор свободного запроса в фильтры и т. п.). */
-export async function askJson(system: string, user: string): Promise<unknown> {
+export async function askJson(system: string, user: string, { maxTokens = 1500 } = {}): Promise<unknown> {
   const t = await getSettings("tuning");
-  return extractJson(await chat([{ role: "system", content: system }, { role: "user", content: user }], { temperature: t.parseTemperature }));
+  return extractJson(await chat([{ role: "system", content: system }, { role: "user", content: user }], { temperature: t.parseTemperature, maxTokens }));
 }

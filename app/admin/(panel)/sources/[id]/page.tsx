@@ -49,10 +49,10 @@ export default async function SourcePage({ params }: { params: Promise<{ id: str
               Последний сбор {when(source.lastRunAt)}: {source.lastMessage}
             </p>
           )}
-          <SourcePreview id={source.id} action={previewSourceAction} ai={source.kind === "rss_ai"} />
+          <SourcePreview id={source.id} action={previewSourceAction} ai={source.kind === "rss_ai" || source.kind === "html_ai"} />
           <div className="flex flex-wrap gap-3">
             <ActionButton action={runSourceNow.bind(null, source.id)}>Собрать сейчас</ActionButton>
-            {source.kind === "rss_ai" && itemCount > 0 && (
+            {(source.kind === "rss_ai" || source.kind === "html_ai") && itemCount > 0 && (
               <ActionButton
                 action={forgetSourceItems.bind(null, source.id)}
                 confirm="Забыть разобранные записи? Следующий сбор отправит их ИИ заново (это расход токенов)."

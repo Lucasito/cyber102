@@ -44,7 +44,7 @@ export async function saveSource(_: ActionState, f: FormData): Promise<ActionSta
       adapter: adapter || null,
       city: text(f, "city").slice(0, 100) || null,
       // Разбор ИИ — всегда через модерацию, флаг не действует
-      autoPublish: kind !== "rss_ai" && f.get("autoPublish") === "on",
+      autoPublish: kind !== "rss_ai" && kind !== "html_ai" && f.get("autoPublish") === "on",
       enabled: f.get("enabled") === "on",
       intervalHours: num(f, "intervalHours", 1, 168, 12),
       maxItems: num(f, "maxItems", 1, 100, 20),

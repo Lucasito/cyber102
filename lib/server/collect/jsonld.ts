@@ -18,11 +18,13 @@ function objects(html: string): Obj[] {
   for (const m of html.matchAll(/<script[^>]+type=["']application\/ld\+json["'][^>]*>([\s\S]*?)<\/script>/gi)) {
     try {
       const data = JSON.parse(m[1].trim());
-      const walk = (v: unknown) => {
-        if (Array.isArray(v)) v.forEach(walk);
+      // Обходим разметку целиком: события бывают в @graph, в ItemList → itemListElement → item и глубже
+      const walk = (v: unknown, depth = 0) => {
+        if (depth > 8) return;
+        if (Array.isArray(v)) v.forEach((x) => walk(x, depth + 1));
         else if (v && typeof v === "object") {
           out.push(v as Obj);
-          if (Array.isArray((v as Obj)["@graph"])) walk((v as Obj)["@graph"]);
+          for (const [k, x] of Object.entries(v as Obj)) if (k !== "location" && k !== "offers" && x && typeof x === "object") walk(x, depth + 1);
         }
       };
       walk(data);
@@ -32,6 +34,21 @@ function objects(html: string): Obj[] {
   }
   return out;
 }
+
+/** Тип события schema.org → код жанра (у общего «Event» жанра нет). */
+const TYPE_CATEGORY: Record<string, string> = {
+  TheaterEvent: "theatre",
+  MusicEvent: "concert",
+  ExhibitionEvent: "exhibition",
+  ChildrensEvent: "kids",
+  ScreeningEvent: "cinema",
+  Festival: "festival",
+  EducationEvent: "lecture",
+  DanceEvent: "theatre",
+  VisualArtsEvent: "exhibition",
+  LiteraryEvent: "lecture",
+};
+const categoryOf = (t: unknown) => (Array.isArray(t) ? t : [t]).map((x) => (typeof x === "string" ? TYPE_CATEGORY[x] : undefined)).find(Boolean);
 
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : typeof v === "number" ? String(v) : undefined);
 const first = (v: unknown) => (Array.isArray(v) ? v[0] : v);
@@ -49,6 +66,7 @@ export function jsonLdEvents(html: string, pageUrl: string): Record<string, unkn
       return {
         title: str(e.name),
         description: str(e.description),
+        category: categoryOf(e["@type"]),
         dateStart: str(e.startDate),
         dateEnd: str(e.endDate),
         venue: str(loc?.name),

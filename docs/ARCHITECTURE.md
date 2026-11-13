@@ -116,6 +116,7 @@ User-Agent, кеш в таблице `GeoCache` (в том числе «не н�
 | `universal_json` | `index.ts` | JSON по [формату](../lib/format-spec.ts): массив или `{ events }` |
 | `universal_rss` | `rss.ts` | RSS 2.0, поля `afisha:*` (пространство имён `urn:afisha-rb:1`), `link` — ссылка, `guid` — код |
 | `jsonld` | `jsonld.ts` | `<script type="application/ld+json">` с `@type …Event` |
+| `html_ai` | `fetch.ts` + `ai-extract.ts` | Страница афиши → JSON-LD, если есть; иначе текст со ссылками «текст (адрес)» кусками по 4000 символов → ИИ извлекает список событий (`extractEventList`); неизменившийся кусок (`SourceItem` с `guid = chunk:<sha1>`) повторно не разбирается |
 | `rss_ai` | `rss.ts` + `ai-extract.ts` | Лента → карточка по ссылке → сначала JSON-LD карточки, нет — ИИ извлекает поля (`askJson`), несколько сеансов — несколько строк |
 | `custom` | `adapters.ts` | Реестр индивидуальных парсеров `ADAPTERS` |
 

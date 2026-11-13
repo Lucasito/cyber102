@@ -1,11 +1,12 @@
 import "server-only";
+import { createHash } from "node:crypto";
 import type { Source } from "@/generated/prisma/client";
 import { aiConfigured, tokensCostRub, withAiUsage } from "../ai";
 import { db } from "../db";
 import { importRows, validateRows, type ImportReport, type ValidatedRow } from "../import";
 import { log } from "../log";
 import { ADAPTERS } from "./adapters";
-import { extractEvent } from "./ai-extract";
+import { extractEvent, extractEventList } from "./ai-extract";
 import { fetchText, htmlToText } from "./fetch";
 import { jsonLdEvents } from "./jsonld";
 import { parseFeed } from "./rss";
@@ -20,6 +21,7 @@ export const SOURCE_KINDS = {
   universal_json: { label: "Универсальный формат — JSON", hint: "Лента по нашему формату (/docs/format): массив событий или { events: [...] }", sourceType: "API" },
   universal_rss: { label: "Универсальный формат — RSS", hint: "RSS 2.0 с полями afisha:dateStart, afisha:venue… (/docs/format)", sourceType: "RSS" },
   rss_ai: { label: "RSS-лента + разбор ИИ", hint: "Обычная лента сайта: карточки читает ИИ, всё — через модерацию", sourceType: "RSS" },
+  html_ai: { label: "Страница афиши + разбор ИИ", hint: "Обычная страница афиши без ленты и разметки: события из текста извлекает ИИ, всё — через модерацию", sourceType: "PAGE" },
   jsonld: { label: "Страница с разметкой schema.org", hint: "Страница афиши с JSON-LD Event (как у «Афиши Уфы»)", sourceType: "PAGE" },
   custom: { label: "Индивидуальный парсер", hint: "Разбор HTML конкретного сайта — парсер пишет разработчик", sourceType: "PAGE" },
 } as const;
@@ -65,6 +67,37 @@ async function collect(source: Source, dryRun: boolean): Promise<Collected> {
     case "jsonld": {
       const { text, finalUrl } = await fetchText(source.url, { accept: "text/html" });
       return plain(jsonLdEvents(text, finalUrl));
+    }
+    case "html_ai": {
+      const { text: html, finalUrl } = await fetchText(source.url, { accept: "text/html" });
+      // Разметка schema.org на странице точнее модели — если есть, ИИ не нужен
+      const ld = jsonLdEvents(html, finalUrl);
+      if (ld.length) return plain(ld);
+      // Текст страницы со ссылками — кусками; кусок, который уже разбирали и он не изменился, ИИ не отправляем
+      const chunks = splitChunks(htmlToText(html, 60_000, finalUrl), 4000);
+      const guidOf = (c: string) => `chunk:${createHash("sha1").update(c).digest("hex").slice(0, 16)}`;
+      const known = new Set(
+        (await db.sourceItem.findMany({ where: { sourceId: source.id, guid: { in: chunks.map(guidOf) } }, select: { guid: true } })).map((x) => x.guid),
+      );
+      const fresh = chunks.filter((c) => !known.has(guidOf(c))).slice(0, dryRun ? 2 : 10);
+      const out: Collected = { rows: [], rowGuid: [], skipped: [], feedItems: chunks.length };
+      if (fresh.length && !(await aiConfigured())) return { ...out, message: "ИИ не подключён — страница будет разобрана после его подключения" };
+      for (const [i, c] of fresh.entries()) {
+        const guid = guidOf(c);
+        try {
+          // Учреждение — из названия источника без «— афиша»: им подписываются залы без названия
+          const rows = await extractEventList(c, finalUrl, source.city, source.name.replace(/\s*[—-]\s*(афиша|анонсы).*$/i, "").trim());
+          if (!rows.length) out.skipped.push({ guid, title: `фрагмент ${i + 1}`, link: finalUrl, reason: "мероприятий с датой нет" });
+          for (const r of withCity(rows)) {
+            out.rows.push(r);
+            out.rowGuid.push(guid);
+          }
+        } catch (e) {
+          out.skipped.push({ guid, title: `фрагмент ${i + 1}`, link: finalUrl, reason: `ошибка: ${e instanceof Error ? e.message : e}` });
+        }
+      }
+      if (chunks.length && !fresh.length) out.message = "страница не изменилась с прошлого разбора";
+      return out;
     }
     case "custom": {
       const adapter = source.adapter ? ADAPTERS[source.adapter] : undefined;
@@ -115,6 +148,21 @@ async function collect(source: Source, dryRun: boolean): Promise<Collected> {
   }
 }
 
+/** Текст → куски до size символов по границам строк (для разбора ИИ). */
+function splitChunks(text: string, size: number) {
+  const out: string[] = [];
+  let cur = "";
+  for (const line of text.split("\n")) {
+    if (cur && cur.length + line.length + 1 > size) {
+      out.push(cur);
+      cur = "";
+    }
+    cur += (cur ? "\n" : "") + line.slice(0, size);
+  }
+  if (cur.trim()) out.push(cur);
+  return out;
+}
+
 export type PreviewResult = { feedItems: number; rows: ValidatedRow[]; skipped: Collected["skipped"]; message?: string; tokens: number; costRub: number };
 export type RunResult = { feedItems: number; report: ImportReport | null; skipped: number; message: string; tokens: number; costRub: number };
 
@@ -135,7 +183,13 @@ export async function runSource(sourceId: string, userLogin: string | null): Pro
     const tokens = calls.reduce((n, c) => n + c.tokens, 0);
     const costRub = await tokensCostRub(tokens);
     const review =
-      kind === "rss_ai" ? "разобрано ИИ из ленты — сверить с источником" : !source.autoPublish ? `источник «${source.name}» без автопубликации — проверить` : undefined;
+      kind === "rss_ai"
+        ? "разобрано ИИ из ленты — сверить с источником"
+        : kind === "html_ai"
+          ? "разобрано ИИ со страницы афиши — сверить с источником"
+          : !source.autoPublish
+            ? `источник «${source.name}» без автопубликации — проверить`
+            : undefined;
     const report = got.rows.length
       ? await importRows(got.rows, {
           fileName: `Сбор: ${source.name}`,
@@ -146,8 +200,8 @@ export async function runSource(sourceId: string, userLogin: string | null): Pro
           review,
         })
       : null;
-    // Записи ленты: разобранные больше не отправляем модели
-    if (kind === "rss_ai") {
+    // Записи ленты и куски страницы: разобранные больше не отправляем модели
+    if (kind === "rss_ai" || kind === "html_ai") {
       const byGuid = new Map<string, { status: string; reason?: string; eventId?: string }>();
       report?.rows.forEach((r, i) => {
         const guid = got.rowGuid[i];
