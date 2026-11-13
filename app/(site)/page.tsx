@@ -6,7 +6,7 @@ import { EventGrid } from "@/components/event-card";
 import { NearMeButton } from "@/components/near-me-button";
 import { VenueMap, type MapPoint } from "@/components/venue-map";
 import { dayParts, toCard } from "@/lib/format";
-import { categoryName, dict, tr, type DictKey } from "@/lib/i18n";
+import { categoryName, dict, examplesBa, tr, type DictKey } from "@/lib/i18n";
 import { getLang } from "@/lib/server/lang";
 import { datePresets, filterOptions, parseEventFilter, searchEvents, SORT_LABELS } from "@/lib/server/events";
 import { DEFAULT_EXAMPLES, getSettings, mapConfig } from "@/lib/server/settings";
@@ -40,7 +40,6 @@ function Chip({ href, active, children }: { href: string; active: boolean; child
 const SORT_KEYS = { date: "sortDate", price_asc: "sortCheap", price_desc: "sortExpensive", new: "sortNew", distance: "sortNear" } as const satisfies Record<string, DictKey>;
 
 /** Примеры запросов в башкирской версии (тексты из админки — русские). */
-const EXAMPLES_BA = ["Шәмбе көнө бала менән 1000 һумға тиклем ҡайҙа барырға", "Аҙна буйына Өфөлә түләүһеҙ күргәҙмәләр", "Кискә классик музыка концерты"];
 
 export default async function Home({ searchParams }: { searchParams: Promise<SP> }) {
   const sp = await searchParams;
@@ -111,7 +110,13 @@ export default async function Home({ searchParams }: { searchParams: Promise<SP>
           <p className="mx-auto mt-3 max-w-xl text-center text-stone-600 text-balance sm:text-lg">{(lang === "ru" && site.heroSubtitle) || t("heroSubtitle")}
           </p>
           <div className="mt-8">
-            <AskBox lang={lang} t={dict(lang)} chatEvents={T.chatEvents} examples={lang === "ba" ? EXAMPLES_BA : site.examples.length ? site.examples : DEFAULT_EXAMPLES} />
+            <AskBox
+              lang={lang}
+              t={dict(lang)}
+              ba={lang === "ba" ? (await getSettings("i18n")).ba : undefined}
+              chatEvents={T.chatEvents}
+              examples={lang === "ba" ? examplesBa() : site.examples.length ? site.examples : DEFAULT_EXAMPLES}
+            />
           </div>
         </div>
       </section>
@@ -237,7 +242,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<SP>
           )
         ) : result.items.length ? (
           <>
-            <EventGrid events={result.items.map(toCard)} lang={lang} />
+            <EventGrid events={result.items.map(toCard)} lang={lang} ageNote={!!sp.age} />
             {result.total > result.items.length && (
               <div className="mt-8 text-center">
                 <Link

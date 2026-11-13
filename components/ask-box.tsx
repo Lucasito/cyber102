@@ -4,14 +4,14 @@ import { ArrowUp, LoaderCircle, RotateCcw, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { EventCard } from "@/components/event-card";
 import { toCard, type CardEvent } from "@/lib/format";
-import { quickLabel, type DictKey, type Lang } from "@/lib/i18n";
+import { quickLabel, setBaOverrides, type DictKey, type Lang } from "@/lib/i18n";
 
 // Умный поиск в виде чата: до первого вопроса — строка ввода с примерами,
 // дальше — окно диалога с пузырями, подборками под ответами и быстрыми ответами.
 
 type T = Record<DictKey, string>;
 /** content — что видит пользователь; send — что уходит помощнику (быстрые ответы на башкирском отправляются по-русски). */
-type Msg = { role: "user" | "assistant"; content: string; send?: string; events?: CardEvent[]; suggestions?: string[]; error?: boolean; degraded?: boolean };
+type Msg = { role: "user" | "assistant"; content: string; send?: string; events?: CardEvent[]; suggestions?: string[]; error?: boolean; degraded?: boolean; ageNote?: boolean };
 
 /** Этапы ожидания: запросы к ИИ идут по очереди, поэтому при наплыве ответ может занять до минуты. */
 const STAGES: [number, DictKey][] = [
@@ -74,14 +74,14 @@ function QuickReplies({ items, lang, onPick }: { items: string[]; lang: Lang; on
 }
 
 /** Подборка в чате: компактные строки, сначала 4, остальное — по кнопке. */
-function ChatEvents({ events, lang, t, first }: { events: CardEvent[]; lang: Lang; t: T; first: number }) {
+function ChatEvents({ events, lang, t, first, ageNote }: { events: CardEvent[]; lang: Lang; t: T; first: number; ageNote?: boolean }) {
   const [all, setAll] = useState(false);
   const shown = all ? events : events.slice(0, first);
   return (
     <div className="space-y-2 sm:ml-10">
       <div className="grid gap-2 lg:grid-cols-2">
         {shown.map((e) => (
-          <EventCard key={e.id} event={e} row lang={lang} />
+          <EventCard key={e.id} event={e} row lang={lang} ageNote={ageNote} />
         ))}
       </div>
       {events.length > shown.length && (
@@ -93,7 +93,9 @@ function ChatEvents({ events, lang, t, first }: { events: CardEvent[]; lang: Lan
   );
 }
 
-export function AskBox({ examples, lang, t, chatEvents = 4 }: { examples: string[]; lang: Lang; t: T; chatEvents?: number }) {
+export function AskBox({ examples, lang, t, chatEvents = 4, ba }: { examples: string[]; lang: Lang; t: T; chatEvents?: number; ba?: Record<string, string> }) {
+  // Башкирский перевод из админки — в клиентский модуль (подписи карточек и быстрых ответов)
+  if (ba) setBaOverrides(ba);
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<Msg[]>([]);
   const [loading, setLoading] = useState(false);
@@ -127,7 +129,7 @@ export function AskBox({ examples, lang, t, chatEvents = 4 }: { examples: string
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? t.aiFailed);
-      setMessages([...next, { role: "assistant", content: data.text, events: (data.events ?? []).map(toCard), suggestions: data.suggestions ?? [], degraded: !!data.degraded }]);
+      setMessages([...next, { role: "assistant", content: data.text, events: (data.events ?? []).map(toCard), suggestions: data.suggestions ?? [], degraded: !!data.degraded, ageNote: data.filter?.age != null }]);
     } catch (e) {
       setMessages([...next, { role: "assistant", content: e instanceof Error ? e.message : t.netError, error: true }]);
     } finally {
@@ -234,7 +236,7 @@ export function AskBox({ examples, lang, t, chatEvents = 4 }: { examples: string
                   {t.degradedNote}
                 </p>
               )}
-              {!!m.events?.length && <ChatEvents events={m.events} lang={lang} t={t} first={chatEvents} />}
+              {!!m.events?.length && <ChatEvents events={m.events} lang={lang} t={t} first={chatEvents} ageNote={m.ageNote} />}
               {i === lastAssistant && !loading && (
                 <div className="sm:ml-10">
                   <QuickReplies

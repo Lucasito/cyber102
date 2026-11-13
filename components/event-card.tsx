@@ -12,6 +12,7 @@ export function EventCard({
   row: compact = false,
   lang = "ru",
   accent = false,
+  ageNote = false,
 }: {
   event: CardEvent;
   target?: string;
@@ -20,6 +21,8 @@ export function EventCard({
   lang?: Lang;
   /** Виджет: цвет --brand заметен — полоса у карточки, дата и цена */
   accent?: boolean;
+  /** Подборка с фильтром по возрасту: у события без пометки — «возраст не указан» */
+  ageNote?: boolean;
 }) {
   // Идёт прямо сейчас. Многодневное (выставка) — показываем дату окончания «до 11 дек»; короткое — свою дату
   const now = new Date();
@@ -62,6 +65,11 @@ export function EventCard({
           {e.category && <span className="font-medium text-[var(--brand)]">{categoryName(e.category.slug, e.category.name, lang)}</span>}
           <span>{ongoing ? tr(lang, "live") : live ? tr(lang, "liveUntil", { time: dayPartsL(e.endsAt!, lang).time }) : `${d.weekday}, ${d.time}`}</span>
           {e.ageLimit != null && <span className="ml-auto rounded border border-stone-300 px-1 text-[11px]">{e.ageLimit}+</span>}
+          {e.ageLimit == null && ageNote && (
+            <span className="ml-auto rounded border border-amber-300 bg-amber-50 px-1 text-[11px] text-amber-800" title={tr(lang, "ageUnknownHint")}>
+              {tr(lang, "ageUnknown")}
+            </span>
+          )}
         </div>
         <h3 className="line-clamp-2 font-semibold leading-snug text-stone-900 group-hover:text-[var(--brand)]">{e.title}</h3>
         {e.venue && (
@@ -79,11 +87,11 @@ export function EventCard({
   );
 }
 
-export function EventGrid({ events, target, lang = "ru" }: { events: CardEvent[]; target?: string; lang?: Lang }) {
+export function EventGrid({ events, target, lang = "ru", ageNote = false }: { events: CardEvent[]; target?: string; lang?: Lang; ageNote?: boolean }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
       {events.map((e) => (
-        <EventCard key={e.id} event={e} target={target} lang={lang} />
+        <EventCard key={e.id} event={e} target={target} lang={lang} ageNote={ageNote} />
       ))}
     </div>
   );

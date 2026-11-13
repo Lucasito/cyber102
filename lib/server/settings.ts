@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { EXAMPLES_RU } from "@/lib/i18n";
 import { db } from "./db";
 
 // Настройки из админки. Хранятся в таблице Setting (раздел → JSON).
@@ -75,6 +76,10 @@ export const settingsSchema = {
     // Населённые пункты РБ сверх встроенного справочника (сёла): события в них импорт принимает
     extraSettlements: z.array(z.string().trim().max(60)).max(500).default([]),
   }),
+  /** Башкирская локализация из админки: русский текст → перевод (подменяет встроенный). */
+  i18n: z.object({
+    ba: z.record(z.string(), z.string().max(3000)).default({}),
+  }),
   map: z.object({
     provider: z.enum(["openfreemap", "osm", "yandex"]).default("openfreemap"),
     // Ключ JavaScript API Яндекс Карт (developer.tech.yandex.ru). Публичный — виден в браузере;
@@ -138,7 +143,7 @@ export const pick = (fromAdmin: string, env: string | undefined) => fromAdmin ||
 
 export const DEFAULT_HERO_TITLE = "Куда сходить в Башкортостане";
 export const DEFAULT_HERO_SUBTITLE = "Спектакли, концерты, выставки и музеи республики. Опишите запрос своими словами — помощник подберёт события из афиши.";
-export const DEFAULT_EXAMPLES = ["Куда пойти в субботу с ребёнком до 1000 ₽", "Бесплатные выставки в Уфе на неделе", "Концерт классической музыки вечером"];
+export const DEFAULT_EXAMPLES = EXAMPLES_RU;
 export const DEFAULT_BOT_GREETING =
   "Здравствуйте! Я помощник афиши культуры Башкортостана. Напишите, что ищете, например: «куда пойти в субботу с ребёнком до 1000 рублей» — подберу события из афиши.";
 

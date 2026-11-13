@@ -129,7 +129,22 @@ export async function searchEvents(f: FilterInput) {
       .map((e) => ({ ...e, distanceKm: e.venue?.lat != null && e.venue.lon != null ? distanceKm(near, { lat: e.venue.lat, lon: e.venue.lon }) : null }))
       .filter((e) => e.distanceKm != null && e.distanceKm <= radius);
     if (f.sort === "distance") all.sort((a, b) => a.distanceKm! - b.distanceKm!);
-    return { items: all.slice(f.offset, f.offset + f.limit), total: all.length, limit: f.limit, offset: f.offset };
+    // С фильтром по возрасту события без возрастной пометки — в конце (порядок внутри групп сохраняется)
+    const sorted = f.age != null ? [...all.filter((e) => e.ageLimit != null), ...all.filter((e) => e.ageLimit == null)] : all;
+    return { items: sorted.slice(f.offset, f.offset + f.limit), total: all.length, limit: f.limit, offset: f.offset };
+  }
+
+  if (f.age != null) {
+    // Возраст указан: сначала события с подходящей пометкой, потом — без пометки (возраст неизвестен, уточнить у
+    // организатора). Две выборки со сквозной постраничностью: offset/limit считаются по объединённому списку
+    const and = where.AND as Prisma.EventWhereInput[];
+    const known: Prisma.EventWhereInput = { ...where, AND: [...and, { ageLimit: { not: null } }] };
+    const unknown: Prisma.EventWhereInput = { ...where, AND: [...and, { ageLimit: null }] };
+    const [c1, c2] = await Promise.all([db.event.count({ where: known }), db.event.count({ where: unknown })]);
+    const first = c1 > f.offset ? await db.event.findMany({ where: known, orderBy: ORDER[f.sort ?? "date"], skip: f.offset, take: f.limit, include }) : [];
+    const rest = f.limit - first.length;
+    const second = rest > 0 && c2 ? await db.event.findMany({ where: unknown, orderBy: ORDER[f.sort ?? "date"], skip: Math.max(0, f.offset - c1), take: rest, include }) : [];
+    return { items: [...first, ...second].map((e) => ({ ...e, distanceKm: null as number | null })), total: c1 + c2, limit: f.limit, offset: f.offset };
   }
 
   const [items, total] = await Promise.all([

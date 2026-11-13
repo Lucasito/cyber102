@@ -112,12 +112,12 @@ const toFilter = (b: Browse, limit: number, offset = 0) =>
   });
 
 /** Строка события в списке: название, когда, где, цена, возраст. */
-export function eventLine(e: EventItem, i: number) {
+export function eventLine(e: EventItem, i: number, ageNote = false) {
   const status = e.status === "RESCHEDULED" ? " (перенесено)" : e.status === "SOLD_OUT" ? " (билетов нет)" : "";
   // Многодневное, уже открытое (выставка) — «идёт до …», а не дата открытия в прошлом
   const ongoing = e.endsAt && e.endsAt.getTime() - e.startsAt.getTime() > 86_400_000 && e.startsAt < new Date();
   const when = ongoing ? `идёт до ${e.endsAt!.toLocaleDateString("ru-RU", { timeZone: TZ, day: "numeric", month: "long" })}` : fmtWhen(e.startsAt);
-  return `${i}. ${e.title}${status}\n   ${when} ·${e.venue ? `${e.venue.name}, ${e.venue.city}` : ""} · ${price(e)}${e.ageLimit != null ? ` · ${e.ageLimit}+` : ""}`;
+  return `${i}. ${e.title}${status}\n   ${when} ·${e.venue ? `${e.venue.name}, ${e.venue.city}` : ""} · ${price(e)}${e.ageLimit != null ? ` · ${e.ageLimit}+` : ageNote ? " · возраст не указан — уточните у организатора" : ""}`;
 }
 
 /** Ряд фильтров под списком. */

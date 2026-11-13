@@ -121,13 +121,29 @@ const D = {
   accessWheelchair: ["Доступно на коляске", "Коляскала барып була"],
   accessHearing: ["Для слабослышащих", "Насар ишетеүселәр өсөн"],
   accessVision: ["Для слабовидящих", "Насар күреүселәр өсөн"],
+  ageUnknown: ["возраст не указан", "йәш күрһәтелмәгән"],
+  ageUnknownHint: ["Возрастное ограничение не указано — уточните у организатора", "Йәш сикләүе күрһәтелмәгән — ойоштороусынан белешегеҙ"],
 } as const satisfies Record<string, readonly [string, string]>;
 
 export type DictKey = keyof typeof D;
 
+// ───────── Башкирский перевод из админки ─────────
+// «Сайт» → «Башкирская локализация»: CSV «русский;башкирский». Загруженные переводы хранятся в настройках по русскому
+// тексту и подменяют встроенные везде: интерфейс, жанры, быстрые ответы, примеры, фразы помощника. На сервере их
+// подгружает getLang() (lib/server/lang.ts), в клиентский чат они передаются пропсом.
+
+let BA_OVERRIDES: Record<string, string> = {};
+export function setBaOverrides(map: Record<string, string>) {
+  BA_OVERRIDES = map;
+}
+/** Башкирский текст для русского: перевод из админки или встроенный. */
+export function baText(ru: string, builtin: string) {
+  return BA_OVERRIDES[ru] || builtin;
+}
+
 /** Перевод с подстановкой {переменных}. */
 export function tr(lang: Lang, key: DictKey, vars?: Record<string, string | number>) {
-  let s: string = D[key][lang === "ba" ? 1 : 0];
+  let s: string = lang === "ba" ? baText(D[key][0], D[key][1]) : D[key][0];
   if (vars) for (const [k, v] of Object.entries(vars)) s = s.replace(`{${k}}`, String(v));
   return s;
 }
@@ -137,6 +153,18 @@ export function dict(lang: Lang) {
   return Object.fromEntries(Object.keys(D).map((k) => [k, tr(lang, k as DictKey)])) as Record<DictKey, string>;
 }
 
+/** Названия жанров на русском — как в справочнике категорий. */
+const CATEGORY_RU: Record<string, string> = {
+  theatre: "Театр",
+  concert: "Концерты",
+  exhibition: "Выставки",
+  museum: "Музеи",
+  kids: "Детям",
+  cinema: "Кино",
+  festival: "Фестивали",
+  lecture: "Лекции",
+  excursion: "Экскурсии",
+};
 const CATEGORY_BA: Record<string, string> = {
   theatre: "Театр",
   concert: "Концерттар",
@@ -149,7 +177,7 @@ const CATEGORY_BA: Record<string, string> = {
   excursion: "Экскурсиялар",
 };
 export function categoryName(slug: string, ruName: string, lang: Lang) {
-  return lang === "ba" ? (CATEGORY_BA[slug] ?? ruName) : ruName;
+  return lang === "ba" ? baText(ruName, CATEGORY_BA[slug] ?? ruName) : ruName;
 }
 
 export function statusLabel(status: string, lang: Lang) {
@@ -175,7 +203,24 @@ const QUICK_BA: Record<string, string> = {
   "По Пушкинской карте": "Пушкин картаһы буйынса",
 };
 export function quickLabel(text: string, lang: Lang) {
-  return lang === "ba" ? (QUICK_BA[text] ?? text) : text;
+  return lang === "ba" ? baText(text, QUICK_BA[text] ?? text) : text;
+}
+
+/** Примеры запросов на главной: русские по умолчанию и их башкирский перевод (по порядку). */
+export const EXAMPLES_RU = ["Куда пойти в субботу с ребёнком до 1000 ₽", "Бесплатные выставки в Уфе на неделе", "Концерт классической музыки вечером"];
+const EXAMPLES_BA = ["Шәмбе көнө бала менән 1000 һумға тиклем ҡайҙа барырға", "Аҙна буйына Өфөлә түләүһеҙ күргәҙмәләр", "Кискә классик музыка концерты"];
+export function examplesBa() {
+  return EXAMPLES_RU.map((ru, i) => baText(ru, EXAMPLES_BA[i]));
+}
+
+/** Все пары «русский — встроенный башкирский» интерфейса: для выгрузки и проверки загрузки локализации. */
+export function i18nPairs(): { ru: string; ba: string }[] {
+  return [
+    ...Object.values(D).map(([ru, ba]) => ({ ru, ba })),
+    ...Object.entries(CATEGORY_RU).map(([slug, ru]) => ({ ru, ba: CATEGORY_BA[slug] ?? ru })),
+    ...Object.entries(QUICK_BA).map(([ru, ba]) => ({ ru, ba })),
+    ...EXAMPLES_RU.map((ru, i) => ({ ru, ba: EXAMPLES_BA[i] })),
+  ];
 }
 
 // ───────── Даты (Intl не знает башкирский — свои названия) ─────────

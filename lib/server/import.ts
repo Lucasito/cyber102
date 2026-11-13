@@ -338,7 +338,12 @@ export async function importRows(rows: Record<string, unknown>[], opts: ImportOp
         linkCache.set(n.sourceUrl, alive);
         if (!alive.ok) n.issues.push(`ссылка на источник не отвечает${alive.status ? ` (код ${alive.status})` : ""}`);
       }
-      if (!("error" in n) && opts.review) n.issues.unshift(opts.review);
+      if (!("error" in n) && opts.review) {
+        n.issues.unshift(opts.review);
+        // Возраст в источниках часто не указан — модератор допишет, если он известен (иначе событие без пометки
+        // показывается при фильтре по возрасту в конце, с надписью «возраст не указан»)
+        if (n.ageLimit == null) n.issues.push("возраст не указан — допишите, если известен");
+      }
       if ("error" in n) {
         await db.rawRecord.upsert({
           where: { source_hash: { source, hash } },

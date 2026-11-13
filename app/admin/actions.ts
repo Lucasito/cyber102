@@ -11,6 +11,7 @@ import type { AdminRole } from "@/generated/prisma/client";
 import { maxGetMe } from "@/lib/server/max";
 import { getSettings, maxToken, pick, saveSettings, settingsSchema, telegramConfig, type Settings } from "@/lib/server/settings";
 import { telegramGetMe } from "@/lib/server/telegram";
+import { checkLocalization, localizationEntries } from "@/lib/server/localization";
 
 // Каждое действие проверяет доступ: server actions — это открытые POST-эндпоинты.
 
@@ -479,4 +480,44 @@ export async function rejectOrganizer(id: string): Promise<ActionState> {
   } catch (e) {
     return fail(e);
   }
+}
+
+// ── Башкирская локализация ───────────────────────────────────────────────────
+
+export type LocalizationState = { ok: boolean; message: string; errors?: string[]; warnings?: string[] } | null;
+
+/** Загрузка CSV «русский;башкирский»: при ошибках не меняется ничего; хранятся только отличия от встроенного перевода. */
+export async function importLocalization(_: LocalizationState, f: FormData): Promise<LocalizationState> {
+  const me = await requireAdmin();
+  try {
+    const file = f.get("file");
+    if (!(file instanceof File) || !file.size) throw new Error("Выберите файл CSV.");
+    if (file.size > 2 * 1024 * 1024) throw new Error("Файл больше 2 МБ — это не похоже на файл локализации.");
+    if (!/\.(csv|txt)$/i.test(file.name)) throw new Error("Нужен файл .csv.");
+    const text = new TextDecoder("utf-8").decode(await file.arrayBuffer());
+    const check = await checkLocalization(text);
+    if (check.errors.length) return { ok: false, message: `Файл не принят — ничего не изменено. Ошибок: ${check.errors.length}.`, errors: check.errors, warnings: check.warnings };
+    const builtin = new Map((await localizationEntries()).map((e) => [e.ru, e.builtin]));
+    const current = (await getSettings("i18n")).ba;
+    const next: Record<string, string> = { ...current };
+    for (const [ru, ba] of Object.entries(check.map)) {
+      if (ba === builtin.get(ru)) delete next[ru];
+      else next[ru] = ba;
+    }
+    await saveSettings("i18n", { ba: next });
+    await db.auditLog.create({ data: { userLogin: me.login, action: "update", entity: "settings", summary: `Загружена башкирская локализация: строк ${check.rows}, изменено ${check.changed}` } });
+    revalidatePath("/", "layout");
+    return { ok: true, message: `Принято: строк ${check.rows}, изменено переводов ${check.changed}. Изменения уже на сайте.`, warnings: check.warnings };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : String(e) };
+  }
+}
+
+/** Вернуть встроенный башкирский перевод. */
+export async function resetLocalization(): Promise<ActionState> {
+  const me = await requireAdmin();
+  await saveSettings("i18n", { ba: {} });
+  await db.auditLog.create({ data: { userLogin: me.login, action: "update", entity: "settings", summary: "Башкирская локализация сброшена к встроенной" } });
+  revalidatePath("/", "layout");
+  return { ok: true, message: "Восстановлен встроенный перевод" };
 }
