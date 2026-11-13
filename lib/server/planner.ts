@@ -57,7 +57,8 @@ function travel(a: EventItem, b: EventItem) {
   if (a.venueId && a.venueId === b.venueId) return 0;
   const va = a.venue;
   const vb = b.venue;
-  if (va?.lat == null || va.lon == null || vb?.lat == null || vb.lon == null) return 20;
+  // Нет координат или они приблизительные (центр города) — средний переезд по городу
+  if (va?.lat == null || va.lon == null || vb?.lat == null || vb.lon == null || va.approx || vb.approx) return 20;
   return Math.round((distanceKm({ lat: va.lat, lon: va.lon }, { lat: vb.lat, lon: vb.lon }) / CITY_KMH) * 60) + TRANSFER_OVERHEAD_MIN;
 }
 

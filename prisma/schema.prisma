@@ -57,6 +57,7 @@ model Venue {
   lat        Float?
   lon        Float?
   geocodedAt DateTime? // когда искали координаты по адресу (найдены или нет) — чтобы не повторять
+  approx     Boolean   @default(false) // координаты — центр города: точный адрес не найден (на карте — «адрес уточняется»)
   events     Event[]
 
   @@unique([name, city])
@@ -64,43 +65,43 @@ model Venue {
 }
 
 model Event {
-  id               String        @id @default(cuid())
-  title            String
-  description      String?
-  startsAt         DateTime
-  endsAt           DateTime?
-  status           EventStatus   @default(SCHEDULED)
-  priceMin         Int?
-  priceMax         Int?
-  ageLimit         Int? // возрастное ограничение: 0, 6, 12, 16, 18
-  imageUrl         String?
-  ticketUrl        String?
-  pushkinCard      Boolean       @default(false) // можно оплатить Пушкинской картой
-  accessibility    String[]      @default([]) // доступная среда: wheelchair, hearing, vision
-  dedupKey         String        @unique
-  normalizedTitle  String        @default("") // для дедупликации и поиска (ТЗ 8.1)
-  tags             String[]      @default([]) // метки: джаз, дети, башкирский язык…
-  language         String? // язык мероприятия, если указан
-  durationMin      Int? // длительность, если известна
-  orgUrl           String? // организатор (билеты — ticketUrl)
-  publication      Publication   @default(PUBLISHED)
-  needsReview      Boolean       @default(false) // спорная карточка — в очередь модерации
+  id                  String        @id @default(cuid())
+  title               String
+  description         String?
+  startsAt            DateTime
+  endsAt              DateTime?
+  status              EventStatus   @default(SCHEDULED)
+  priceMin            Int?
+  priceMax            Int?
+  ageLimit            Int? // возрастное ограничение: 0, 6, 12, 16, 18
+  imageUrl            String?
+  ticketUrl           String?
+  pushkinCard         Boolean       @default(false) // можно оплатить Пушкинской картой
+  accessibility       String[]      @default([]) // доступная среда: wheelchair, hearing, vision
+  dedupKey            String        @unique
+  normalizedTitle     String        @default("") // для дедупликации и поиска (ТЗ 8.1)
+  tags                String[]      @default([]) // метки: джаз, дети, башкирский язык…
+  language            String? // язык мероприятия, если указан
+  durationMin         Int? // длительность, если известна
+  orgUrl              String? // организатор (билеты — ticketUrl)
+  publication         Publication   @default(PUBLISHED)
+  needsReview         Boolean       @default(false) // спорная карточка — в очередь модерации
   possibleDuplicateId String? // похоже на это событие из другого источника — решает модератор («Объединить» / «Разные»)
-  distinctFrom     String[]      @default([]) // модератор решил: не дубль этих событий — в поиске дублей пара больше не показывается
-  createdById      String? // кто добавил в админке (организатор видит свои события)
-  createdBy        AdminUser?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
-  reviewNote       String? // почему спорная
-  originalStartsAt DateTime? // прежняя дата, если событие перенесено
-  verifiedAt       DateTime? // когда источник проверен
-  confidence       Float? // уверенность извлечения 0–1
-  categoryId       String?
-  category         Category?     @relation(fields: [categoryId], references: [id])
-  venueId          String?
-  venue            Venue?        @relation(fields: [venueId], references: [id])
-  sources          EventSource[]
-  reminders        Reminder[]
-  createdAt        DateTime      @default(now())
-  updatedAt        DateTime      @updatedAt
+  distinctFrom        String[]      @default([]) // модератор решил: не дубль этих событий — в поиске дублей пара больше не показывается
+  createdById         String? // кто добавил в админке (организатор видит свои события)
+  createdBy           AdminUser?    @relation(fields: [createdById], references: [id], onDelete: SetNull)
+  reviewNote          String? // почему спорная
+  originalStartsAt    DateTime? // прежняя дата, если событие перенесено
+  verifiedAt          DateTime? // когда источник проверен
+  confidence          Float? // уверенность извлечения 0–1
+  categoryId          String?
+  category            Category?     @relation(fields: [categoryId], references: [id])
+  venueId             String?
+  venue               Venue?        @relation(fields: [venueId], references: [id])
+  sources             EventSource[]
+  reminders           Reminder[]
+  createdAt           DateTime      @default(now())
+  updatedAt           DateTime      @updatedAt
 
   @@index([startsAt])
   @@index([status, startsAt])

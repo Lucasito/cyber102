@@ -89,15 +89,21 @@ export default async function Home({ searchParams }: { searchParams: Promise<SP>
   // Для карты — до 200 событий текущей выборки, сгруппированных по площадкам
   const mapPoints: MapPoint[] = [];
   if (mapView && parsed.success) {
-    const all = await searchEvents({ ...parsed.data, limit: 100, offset: 0 });
-    const byVenue = new Map<string, MapPoint>();
+    // На карту — все подходящие события (до 1000), а не одна страница каталога
+    const all = await searchEvents({ ...parsed.data, limit: 1000, offset: 0 });
+    // Точка — площадка; площадки без точного адреса (центр города) — одна общая точка города «адрес уточняется»
+    const byVenue = new Map<string, MapPoint & { more: number }>();
     for (const e of all.items) {
       if (e.venue?.lat == null || e.venue.lon == null) continue;
-      const p = byVenue.get(e.venue.id) ?? { lat: e.venue.lat, lon: e.venue.lon, title: `${e.venue.name}, ${e.venue.city}`, lines: [] };
-      if (p.lines.length < 6) p.lines.push({ text: `${dayParts(toCard(e).startsAt).day} ${dayParts(toCard(e).startsAt).month} — ${e.title}`, href: `/events/${e.id}` });
-      byVenue.set(e.venue.id, p);
+      const key = e.venue.approx ? `city:${e.venue.city}` : e.venue.id;
+      const title = e.venue.approx ? `${e.venue.city} — ${tr(lang, "mapApproxCity")}` : `${e.venue.name}, ${e.venue.city}`;
+      const p = byVenue.get(key) ?? { lat: e.venue.lat, lon: e.venue.lon, title, lines: [], more: 0 };
+      const d = dayParts(toCard(e).startsAt);
+      if (p.lines.length < 6) p.lines.push({ text: `${d.day} ${d.month} — ${e.title}${e.venue.approx ? ` (${e.venue.name})` : ""}`, href: `/events/${e.id}` });
+      else p.more++;
+      byVenue.set(key, p);
     }
-    mapPoints.push(...byVenue.values());
+    mapPoints.push(...[...byVenue.values()].map(({ more, ...p }) => (more ? { ...p, lines: [...p.lines, { text: tr(lang, "mapMore", { n: more }) }] } : p)));
   }
   const me = sp.near ? { lat: Number(sp.near.split(",")[0]), lon: Number(sp.near.split(",")[1]) } : null;
 

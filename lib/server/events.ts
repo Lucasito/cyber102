@@ -114,7 +114,7 @@ export async function searchEvents(f: FilterInput) {
       f.q ? { OR: [{ title: { contains: f.q, mode: "insensitive" } }, { description: { contains: f.q, mode: "insensitive" } }, { venue: { name: { contains: f.q, mode: "insensitive" } } }] } : {},
       f.age != null ? { OR: [{ ageLimit: null }, { ageLimit: { lte: f.age } }] } : {},
       f.city ? { venue: { city: { equals: f.city, mode: "insensitive" } } } : {},
-      box ? { venue: box } : {},
+      box ? { venue: { ...box, approx: false } } : {}, // центр города вместо адреса — не «рядом»
     ],
     ...(f.category ? { category: { slug: f.category } } : {}),
     ...(f.free ? { priceMin: 0 } : f.priceMax != null ? { priceMin: { lte: f.priceMax } } : {}),

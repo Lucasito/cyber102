@@ -72,6 +72,8 @@ export function jsonLdEvents(html: string, pageUrl: string): Record<string, unkn
         venue: str(loc?.name),
         address: str(addr?.streetAddress) ?? (typeof loc?.address === "string" ? loc.address : undefined),
         city: str(addr?.addressLocality),
+        lat: str((loc?.geo as Obj | undefined)?.latitude),
+        lon: str((loc?.geo as Obj | undefined)?.longitude),
         priceMin: str(offers?.lowPrice) ?? str(offers?.price),
         priceMax: str(offers?.highPrice),
         isFree: e.isAccessibleForFree === true || str(offers?.price) === "0" ? true : undefined,

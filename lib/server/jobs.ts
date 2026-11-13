@@ -134,7 +134,7 @@ export function startJobs() {
     // Координаты площадок по адресу — раз в 5 минут, понемногу (правила Nominatim)
     if (Date.now() - lastGeocode > 5 * MINUTE) {
       lastGeocode = Date.now();
-      await geocodeVenues().catch((e) => console.error("[jobs] координаты:", e instanceof Error ? e.message : e));
+      await geocodeVenues(10).catch((e) => console.error("[jobs] координаты:", e instanceof Error ? e.message : e));
     }
     // Сбор из внешних источников (раздел «Источники»): раз в 10 минут проверяем, кому пора; в фоне, не держа тик
     if (!collecting && Date.now() - lastCollect > 10 * MINUTE) {

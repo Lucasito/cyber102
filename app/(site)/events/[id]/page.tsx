@@ -57,7 +57,7 @@ function eventJsonLd(e: NonNullable<Awaited<ReturnType<typeof getEvent>>>) {
           "@type": "Place",
           name: e.venue.name,
           address: { "@type": "PostalAddress", addressLocality: e.venue.city, streetAddress: e.venue.address ?? undefined, addressRegion: "Республика Башкортостан", addressCountry: "RU" },
-          geo: e.venue.lat != null && e.venue.lon != null ? { "@type": "GeoCoordinates", latitude: e.venue.lat, longitude: e.venue.lon } : undefined,
+          geo: e.venue.lat != null && e.venue.lon != null && !e.venue.approx ? { "@type": "GeoCoordinates", latitude: e.venue.lat, longitude: e.venue.lon } : undefined,
         }
       : undefined,
     offers:
@@ -179,7 +179,13 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
         ) : (
           <div />
         )}
-        {e.venue?.lat != null && e.venue.lon != null && (
+        {e.venue?.approx && (
+          <section>
+            <h2 className="mb-2 text-lg font-semibold">{t("howToGet")}</h2>
+            <p className="text-sm text-stone-600">{t("placeApprox")}</p>
+          </section>
+        )}
+        {e.venue?.lat != null && e.venue.lon != null && !e.venue.approx && (
           <section>
             <h2 className="mb-3 text-lg font-semibold">{t("howToGet")}</h2>
             <VenueMap

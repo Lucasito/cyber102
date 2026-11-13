@@ -1,7 +1,7 @@
 import "server-only";
 import { db } from "./db";
 import { errMessage, log } from "./log";
-import { normalizeTitle, RB_SETTLEMENTS } from "./normalize";
+import { normalizeTitle } from "./normalize";
 
 // Геокодирование через Nominatim (OpenStreetMap): бесплатно, без ключа, доступен с сервера.
 // Правила Nominatim: не чаще 1 запроса в секунду, понятный User-Agent, без массовых выгрузок — поэтому
@@ -70,18 +70,42 @@ export async function settlementInBashkortostan(city: string): Promise<boolean |
   return isBashkortostanRegion(r.region);
 }
 
+/** Варианты названия площадки для поиска: полное; без зала после запятой; без кавычек; без «государственный», «РБ». */
+export function venueNameVariants(name: string): string[] {
+  const out = new Set<string>();
+  const add = (v: string) => {
+    const t = v.replace(/\s+/g, " ").trim();
+    if (t.length >= 3) out.add(t);
+  };
+  // В JS \b не работает с кириллицей — границы слов задаём явно: (^|\s) … (?=\s|$)
+  const drop = (s: string, words: string) => s.replace(new RegExp(`(^|\\s)(${words})(?=\\s|$)`, "gi"), " ");
+  add(name);
+  const main = name.split(/,\s*/)[0];
+  add(main); // «Театр оперы и балета, Большой зал» → «Театр оперы и балета»
+  const plain = main.replace(/[«»"“”„()]/g, " ");
+  add(plain);
+  add(main.replace(/драмтеатр/gi, "драматический театр"));
+  // «Государственный академический …», «… Республики Башкортостан», «… РБ», «имени Х. Ахметова» мешают поиску
+  const bare = drop(drop(plain, "государственн\\S*|академическ\\S*|республиканск\\S*|муниципальн\\S*|рб"), "республики\\s+башкортостан")
+    .replace(/(^|\s)(имени|им\.)\s+(\S+\s*){1,3}$/i, " ");
+  add(bare);
+  return [...out].slice(0, 6);
+}
+
 /**
- * Фоновая задача: координаты площадкам без них — по адресу, иначе по названию площадки в городе.
- * За проход — не больше limit площадок (каждая — 1–2 запроса по 1,1 с); площадка помечается, даже если не найдено.
+ * Фоновая задача: координаты площадкам без них — по адресу, иначе по вариантам названия площадки в городе.
+ * Не нашлось — центр населённого пункта с пометкой approx: событие видно на карте («адрес уточняется»), но маршрут
+ * не предлагается, поиск «рядом» и переезды в планировщике такие координаты не используют.
+ * За проход — не больше limit площадок (каждая — до 7 запросов по 1,1 с; ответы кешируются).
  */
 export async function geocodeVenues(limit = 5) {
   const venues = await db.venue.findMany({ where: { lat: null, geocodedAt: null }, take: limit });
   let found = 0;
   for (const v of venues) {
-    // Сначала адрес, потом площадка по названию; в сёлах и посёлках (не в 21 городе) — запасной вариант: центр
-    // населённого пункта, там это близко к правде. В городах центр — плохая точка, оставляем без координат.
-    const town = RB_SETTLEMENTS.slice(0, 21).some((c) => normalizeTitle(c) === normalizeTitle(v.city));
-    const queries = [v.address ? `${v.address}, ${v.city}, Башкортостан` : null, `${v.name}, ${v.city}, Башкортостан`, town ? null : `${v.city}, Башкортостан`].filter(Boolean) as string[];
+    const queries = [
+      v.address ? `${v.address}, ${v.city}, Башкортостан` : null,
+      ...venueNameVariants(v.name).map((n) => `${n}, ${v.city}, Башкортостан`),
+    ].filter(Boolean) as string[];
     let hit: GeoResult | null = null;
     for (const q of queries) {
       const r = await geocode(q);
@@ -91,8 +115,17 @@ export async function geocodeVenues(limit = 5) {
         break;
       }
     }
-    await db.venue.update({ where: { id: v.id }, data: { geocodedAt: new Date(), ...(hit ? { lat: hit.lat, lon: hit.lon } : {}) } });
-    if (hit) found++;
+    let approx = false;
+    if (!hit) {
+      const c = await geocode(`${v.city}, Башкортостан`);
+      if (c === null) return found;
+      if (c.found && isBashkortostanRegion(c.region)) {
+        hit = c;
+        approx = true;
+      }
+    }
+    await db.venue.update({ where: { id: v.id }, data: { geocodedAt: new Date(), approx, ...(hit ? { lat: hit.lat, lon: hit.lon } : {}) } });
+    if (hit && !approx) found++;
   }
   if (venues.length) log("info", "geocode_venues", { checked: venues.length, found });
   return found;
