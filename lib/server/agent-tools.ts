@@ -4,13 +4,14 @@ import { botLinks } from "./bot-links";
 import { db } from "./db";
 import { eventFilterSchema, eventInclude, searchEvents, TZ, type EventFilter, type EventItem } from "./events";
 import { saveFeedback } from "./feedback";
+import { planDay, type PlanResult } from "./planner";
 
 // Инструменты ИИ-агента (ТЗ 7.2). Каждый возвращает структурированный результат (JSON), а не текст ответа:
 // ответ из результата собирает агент. Модель только выбирает инструмент и аргументы — исполняет код.
 // Ошибка инструмента не подменяется догадкой: агент сообщает о проблеме (ok: false).
 // Изменение данных (subscribe, save_feedback) — только после подтверждения пользователем (confirmed).
 
-export const TOOL_NAMES = ["search_events", "get_event", "find_similar", "get_venue_schedule", "subscribe", "save_feedback"] as const;
+export const TOOL_NAMES = ["search_events", "get_event", "find_similar", "get_venue_schedule", "subscribe", "save_feedback", "plan_day"] as const;
 export type ToolName = (typeof TOOL_NAMES)[number];
 
 export type ToolContext = {
@@ -22,7 +23,7 @@ export type ToolContext = {
 };
 
 /** Результат: data — JSON для трассы и сборки ответа; items — события для карточек (не сериализуются в трассу). */
-export type ToolResult = { ok: true; data: Record<string, unknown>; items?: EventItem[] } | { ok: false; error: string };
+export type ToolResult = { ok: true; data: Record<string, unknown>; items?: EventItem[]; plan?: PlanResult } | { ok: false; error: string };
 
 /** Описание инструментов для промпта модели. */
 export const TOOL_PROMPT = `Инструменты (поле "tool", аргументы — в "args"):
@@ -31,7 +32,8 @@ export const TOOL_PROMPT = `Инструменты (поле "tool", аргум�
 - find_similar — «похожее на <событие>». args: {"title": string}.
 - get_venue_schedule — что идёт на конкретной площадке (театр, филармония, музей, ДК). args: {"venue": string}; период — в "filter".
 - subscribe — подписаться на новые события. args: {"city": string?, "category": string?}.
-- save_feedback — передать сообщение организатору или сообщить об ошибке в карточке. args: {"title": string?, "message": string}.`;
+- save_feedback — передать сообщение организатору или сообщить об ошибке в карточке. args: {"title": string?, "message": string}.
+- plan_day — составить план на день из нескольких событий. args: {"date": "YYYY-MM-DD", "city": string?, "budget": number? (на всех), "persons": number?, "age": number?, "from": "HH:MM"?, "to": "HH:MM"?, "maxTravelMin": number?, "count": 2–4?}.`;
 
 /** Компактное представление события для трассы. */
 export function eventBrief(e: { id: string; title: string; startsAt: Date; status?: string; priceMin: number | null; ageLimit: number | null; venue: { name: string; city: string } | null }) {
@@ -184,6 +186,21 @@ async function saveFeedbackTool(args: Record<string, unknown>, ctx: ToolContext)
   return { ok: true, data: { ...what, id: fb.id, saved: true } };
 }
 
+async function planDayTool(args: Record<string, unknown>): Promise<ToolResult> {
+  const plan = await planDay(Object.fromEntries(Object.entries(args).filter(([, v]) => v != null && v !== "")));
+  const data = plan.ok
+    ? {
+        ok: true,
+        items: plan.items.map((p) => ({ ...eventBrief(p.event), start: p.start.toISOString(), end: p.end.toISOString(), travelMin: p.travelMin, cost: p.cost, flexible: p.flexible })),
+        totalCost: plan.totalCost,
+        travelMin: plan.travelMin,
+        unknownPrice: plan.unknownPrice,
+        note: plan.note ?? null,
+      }
+    : { ok: false, violations: plan.violations };
+  return { ok: true, data: { input: plan.input, ...data }, items: plan.ok ? plan.items.map((p) => p.event) : (plan.best ?? []).map((p) => p.event), plan };
+}
+
 /** Вызвать инструмент. Исключение внутри — ok: false с текстом ошибки, без догадок. */
 export async function runTool(name: ToolName, args: Record<string, unknown>, ctx: ToolContext, opts: { limit: number; exclude?: Set<string> }): Promise<ToolResult> {
   try {
@@ -200,6 +217,8 @@ export async function runTool(name: ToolName, args: Record<string, unknown>, ctx
         return await subscribeTool(args, ctx);
       case "save_feedback":
         return await saveFeedbackTool(args, ctx);
+      case "plan_day":
+        return await planDayTool(args);
     }
   } catch (e) {
     console.error(`[agent-tools] ${name}:`, e);

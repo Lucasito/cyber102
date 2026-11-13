@@ -1,5 +1,5 @@
 {
-  "about": "Контрольный набор запросов к ИИ-агенту (ТЗ, раздел 9.2 и Приложение А). Прогон: npm run eval. Ожидаемый результат скрипт считает по базе: если события под условия есть — агент должен их показать и выполнить все условия; если нет — честно сказать, что точных совпадений нет. Поля: constraints — условия (city, category, free, priceMax, age, date, afterHour, q, pushkin, access); forbid — чего не должно быть в ответе; mustInclude — что должно быть; noRepeat — без событий из прошлых реплик; cheaper — дешевле прошлой подборки; tool — ожидаемый инструмент (по умолчанию search_events, у статуса — get_event); bot — диалог от пользователя бота. Даты — относительные: today, tomorrow, weekend, friday, saturday, sunday, week (до воскресенья), next_week, month (до конца месяца).",
+  "about": "Контрольный набор запросов к ИИ-агенту (ТЗ, раздел 9.2 и Приложение А). Прогон: npm run eval. Ожидаемый результат скрипт считает по базе: если события под условия есть — агент должен их показать и выполнить все условия; если нет — честно сказать, что точных совпадений нет. Поля: constraints — условия (city, category, free, priceMax, age, date, afterHour, q, pushkin, access); forbid — чего не должно быть в ответе; mustInclude — что должно быть; noRepeat — без событий из прошлых реплик; cheaper — дешевле прошлой подборки; tool — ожидаемый инструмент (по умолчанию search_events, у статуса — get_event); bot — диалог от пользователя бота; plan — план дня (ok: составлен ли; persons, budget, count — как разобраны условия). Даты — относительные: today, tomorrow, weekend, friday, saturday, sunday, week (до воскресенья), next_week, month (до конца месяца).",
   "cases": [
     {
       "id": "simple-ufa-weekend",
@@ -1000,6 +1000,75 @@
       "tool": "subscribe",
       "mustInclude": [
         "оформить подписку"
+      ]
+    },
+    {
+      "id": "plan-sunday-two",
+      "type": "plan",
+      "dialog": [
+        "Сделай план на воскресенье: три события, 2000 рублей на двоих, без долгих переездов"
+      ],
+      "tool": "plan_day",
+      "plan": {
+        "ok": true,
+        "persons": 2,
+        "budget": 2000,
+        "count": 3
+      }
+    },
+    {
+      "id": "plan-saturday-child",
+      "type": "plan",
+      "dialog": [
+        "Спланируй субботу с ребёнком 6 лет в Уфе, бюджет 1500 рублей"
+      ],
+      "tool": "plan_day",
+      "plan": {
+        "ok": true,
+        "persons": 2,
+        "budget": 1500
+      }
+    },
+    {
+      "id": "plan-window",
+      "type": "plan",
+      "dialog": [
+        "Составь программу на субботу с 12 до 18, на одного, до 1000 рублей"
+      ],
+      "tool": "plan_day",
+      "plan": {
+        "ok": true,
+        "persons": 1,
+        "budget": 1000
+      }
+    },
+    {
+      "id": "plan-incompatible-window",
+      "type": "plan",
+      "dialog": [
+        "Составь план на субботу в Уфе с 7 до 8 утра"
+      ],
+      "tool": "plan_day",
+      "plan": {
+        "ok": false
+      },
+      "mustInclude": [
+        "не получилось",
+        "можно"
+      ]
+    },
+    {
+      "id": "plan-incompatible-budget",
+      "type": "plan",
+      "dialog": [
+        "План на субботу в Уфе: два платных спектакля, 100 рублей на четверых, с 18 до 23"
+      ],
+      "tool": "plan_day",
+      "plan": {
+        "ok": false
+      },
+      "mustInclude": [
+        "можно"
       ]
     }
   ]

@@ -37,6 +37,7 @@ type Case = {
   cheaper?: boolean; // последняя подборка дешевле прошлой («а дешевле?»)
   tool?: string | string[]; // ожидаемый инструмент последней реплики (по умолчанию search_events; статус — get_event)
   bot?: boolean; // диалог от имени пользователя бота (подписка оформляется ему)
+  plan?: { ok: boolean; persons?: number; budget?: number; count?: number }; // план дня: составлен ли и с какими условиями
 };
 type DbEvent = Awaited<ReturnType<typeof loadActual>>[number];
 
@@ -267,7 +268,8 @@ for (const c of cases) {
   }
   const mentioned = statusIds.length ? await db.event.findMany({ where: { id: { in: statusIds } }, include: { venue: true } }) : [];
   const userText = c.dialog.join(" ");
-  const claims = replies.filter((r) => !r.clarify).flatMap((r) => factCheck(r.text, [...r.events, ...mentioned], userText));
+  // План дня проверяется отдельно и строже (порядок, пересечения, бюджет, цены × люди) — в сверку утверждений не идёт
+  const claims = replies.filter((r) => !r.clarify && !r.text.startsWith("План на ") && !r.text.startsWith("Составить план")).flatMap((r) => factCheck(r.text, [...r.events, ...mentioned], userText));
   const text = replies.map((r) => r.text).join("\n").toLowerCase();
 
   let pass = fabricated === 0;
@@ -318,6 +320,42 @@ for (const c of cases) {
   const argsMiss: string[] = [];
   const expectedTool = c.tool ?? (c.type === "status" ? "get_event" : c.constraints && c.type !== "ambiguous" ? "search_events" : null);
   const lastTrace = last.traceId ? await waitTrace(last.traceId) : null;
+  // План дня: проверяем результат инструмента по записям базы — порядок, пересечения, бюджет, переезды, город, возраст
+  if (c.plan) {
+    type PI = { id: string; start: string; end: string; travelMin: number; cost: number | null };
+    const step = (lastTrace?.steps ?? []).find((x) => x.step === "tool" && x.name === "plan_day");
+    const res = step?.result as { ok?: boolean; items?: PI[]; totalCost?: number; input?: Record<string, number | string>; violations?: unknown[] } | undefined;
+    const why: string[] = [];
+    if (!res) why.push("план не составлялся");
+    else if (res.ok !== c.plan.ok) why.push(c.plan.ok ? "план не составлен" : "несовместимые условия не обнаружены");
+    else if (res.ok && res.items && res.input) {
+      const items = res.items;
+      const inp = res.input;
+      if (items.length < 2 || items.length > 4) why.push(`событий ${items.length}`);
+      for (let k = 1; k < items.length; k++) {
+        const gap = (new Date(items[k].start).getTime() - new Date(items[k - 1].end).getTime()) / 60_000;
+        if (gap < items[k].travelMin) why.push(`пересечение или нет времени на переезд перед №${k + 1}`);
+        if (items[k].travelMin > Number(inp.maxTravelMin)) why.push(`переезд ${items[k].travelMin} мин > ${inp.maxTravelMin}`);
+      }
+      const total = items.reduce((n, x) => n + (x.cost ?? 0), 0);
+      if (inp.budget != null && total > Number(inp.budget)) why.push(`стоимость ${total} > бюджета ${inp.budget}`);
+      if (total !== res.totalCost) why.push("итог не сходится");
+      for (const x of items) {
+        const e = await db.event.findUnique({ where: { id: x.id }, include: { venue: true } });
+        if (!e) why.push("событие не из базы");
+        else {
+          if (e.venue?.city.toLowerCase() !== String(inp.city).toLowerCase()) why.push(`город ${e.venue?.city}`);
+          if (inp.age != null && e.ageLimit != null && e.ageLimit > Number(inp.age)) why.push(`${e.title} ${e.ageLimit}+`);
+          if (x.cost != null && e.priceMin != null && x.cost !== e.priceMin * Number(inp.persons)) why.push(`цена ${e.title}`);
+        }
+      }
+      if (c.plan.persons != null && Number(inp.persons) !== c.plan.persons) why.push(`человек ${inp.persons}, ждали ${c.plan.persons}`);
+      if (c.plan.budget != null && Number(inp.budget) !== c.plan.budget) why.push(`бюджет ${inp.budget}, ждали ${c.plan.budget}`);
+      if (c.plan.count != null && Number(inp.count) !== c.plan.count) why.push(`событий хотели ${inp.count}, ждали ${c.plan.count}`);
+    }
+    if (why.length) notes.push(`план: ${why.join("; ")}`);
+    pass &&= !why.length;
+  }
   const firstTool = (lastTrace?.steps ?? []).find((s) => s.step === "tool");
   if (expectedTool) {
     const allowed = Array.isArray(expectedTool) ? expectedTool : [expectedTool];

@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { fmtWhen, runTool, TOOL_NAMES, TOOL_PROMPT, type ToolContext, type ToolName, type ToolResult } from "./agent-tools";
 import { askJson, chat, tokensCostRub, withAiUsage, type ChatMessage } from "./ai";
+import { defaultPlanDate, planText } from "./planner";
 import { saveTrace, spentRub, type QuerySource } from "./analytics";
 import { db } from "./db";
 import { geocode } from "./geocode";
@@ -296,6 +297,11 @@ async function agentCore(
     const r = await call(tool.name, tool.args, { by: tool.by });
     return actionReply(tool.name, r, P, followupSuggestions);
   }
+  if (tool.name === "plan_day") {
+    const r = await call("plan_day", tool.args, { by: tool.by });
+    if (!r.ok || !r.plan) return { text: P.toolError, events: [], suggestions: ["Новый поиск"] };
+    return { text: planText(r.plan), events: r.items ?? [], suggestions: ["Новый поиск"] };
+  }
   if (tool.name === "get_event") {
     const title = String(tool.args.title ?? "");
     const r = await call("get_event", tool.args, { by: tool.by });
@@ -452,6 +458,51 @@ const FEEDBACK_RE = /передай\S* организатор|передай\S* 
 const SCHEDULE_RE = /расписани|что (идет|будет|проходит|покажут|дают) (в|на) /;
 const SIMILAR_TITLE_RE = /похож\S* на [«"„“]?([^»"“”?]{2,80})/;
 
+const PLAN_RE = /(составь|сделай|спланируй|распиши|подбери|набросай)\s+(мне\s+|нам\s+)?(план|программ|маршрут)|план на|программ\S* на (день|выходн|суббот|воскрес|сегодня|завтра)|спланир/;
+const NUM_WORDS: Record<string, number> = { два: 2, две: 2, три: 3, четыре: 4 };
+
+/**
+ * Условия плана дня из текста (нормализованного: строчные, «ё» → «е») — правила главнее модели.
+ * Бюджет — на всех; «на двоих» — 2 человека; «с 12 до 18», «после 14:00», «вечером» — окно;
+ * «без долгих переездов» — до 20 мин на переезд; «три события» — сколько событий.
+ */
+function planArgs(t: string, merged: Record<string, unknown>, m: Record<string, unknown>): Record<string, unknown> {
+  const a: Record<string, unknown> = {};
+  for (const k of ["date", "city", "budget", "persons", "age", "from", "to", "maxTravelMin", "count"]) if (m[k] != null && m[k] !== "") a[k] = m[k];
+  const day = (v: unknown) => (typeof v === "string" ? (v.includes("T") ? localDay(0, new Date(v)) : v.slice(0, 10)) : undefined);
+  a.date = day(merged.dateFrom) ?? day(a.date) ?? defaultPlanDate();
+  if (typeof merged.city === "string") a.city = merged.city;
+  if (merged.age != null) a.age = merged.age;
+  const money = t.match(/(\d[\d\s]{1,6})\s*(?:₽|руб|тыс|р\.|р(?=\s|$|[,;!?]))/);
+  if (money) a.budget = Number(money[1].replace(/\s/g, "")) * (/тыс/.test(money[0]) ? 1000 : 1);
+  else if (merged.priceMax != null) a.budget = merged.priceMax;
+  if (/вдвоем|на двоих|для двоих/.test(t)) a.persons = 2;
+  else if (/втроем|на троих|для троих/.test(t)) a.persons = 3;
+  else if (/вчетвером|на четверых|для четверых/.test(t)) a.persons = 4;
+  else {
+    const n = t.match(/(\d{1,2})\s*(?:человек|чел)/);
+    if (n) a.persons = Number(n[1]);
+    else if (/с ребен|с детьми|с сыном|с дочк|семьей/.test(t)) a.persons = Math.max(Number(a.persons ?? 0), 2);
+  }
+  const cnt = t.match(/(\d|два|две|три|четыре)\s+(?:событ|мероприят|мест|пункт)/);
+  if (cnt) a.count = Math.min(4, Math.max(2, NUM_WORDS[cnt[1]] ?? Number(cnt[1])));
+  const hh = (h: string, mm?: string) => `${h.padStart(2, "0")}:${mm ?? "00"}`;
+  const range = t.match(/с (\d{1,2})(?::(\d{2}))?\s*(?:ч\S*\s*)?до (\d{1,2})(?::(\d{2}))?/);
+  if (range) Object.assign(a, { from: hh(range[1], range[2]), to: hh(range[3], range[4]) });
+  else {
+    const after = t.match(/после (\d{1,2})(?::(\d{2}))?/);
+    if (after) a.from = hh(after[1], after[2]);
+    const before = t.match(/до (\d{1,2}):(\d{2})|до (\d{1,2})\s*(?:ч|час)/);
+    if (before) a.to = hh(before[1] ?? before[3], before[2]);
+    if (/вечером|вечер /.test(t) && !after) a.from = "17:00";
+    if (/утром/.test(t) && !before) a.to = "13:00";
+  }
+  const tr = t.match(/переезд\S*\s*(?:не\s*)?(?:более|больше|дольше|до)?\s*(\d{1,3})\s*мин/);
+  if (tr) a.maxTravelMin = Number(tr[1]);
+  else if (/без долгих переезд|недалеко друг от друга|рядом друг с другом|без переезд/.test(t)) a.maxTravelMin = 20;
+  return a;
+}
+
 /** Фильтр → аргументы инструмента search_events (строки, как в API). */
 const toArgs = (f: EventFilter) => ({ ...plain(f), near: f.near ? `${f.near.lat},${f.near.lon}` : undefined });
 
@@ -460,6 +511,7 @@ function chooseTool(text: string, intent: Intent, merged: Record<string, unknown
   const t = text.toLowerCase().replace(/ё/g, "е");
   const quoted = text.match(/[«"„“]([^»"“”]{2,80})[»"“”]/)?.[1]?.trim();
   const m = intent.args;
+  if (PLAN_RE.test(t) || intent.tool === "plan_day") return { name: "plan_day", args: planArgs(t, merged, m), by: PLAN_RE.test(t) ? "rules" : "model" };
   if (SUBSCRIBE_RE.test(t) && !/отпис/.test(t)) {
     return { name: "subscribe", args: { city: m.city ?? merged.city, category: m.category ?? merged.category }, by: "rules" };
   }

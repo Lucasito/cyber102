@@ -109,6 +109,32 @@ export function GET(request: Request) {
           responses: { "201": { description: "{ id, key, city, category, feedUrl, unsubscribe }" }, "400": err("Неизвестная категория", { code: "bad_request", message: "Неизвестная категория — коды в /api/v1/categories" }) },
         },
       },
+      "/api/v1/plan": {
+        get: {
+          summary: "Планировщик «Выходной день»: 2–4 события на день",
+          description:
+            "События по времени, без пересечений, с переездами (по прямой, 20 км/ч + 10 мин) и общей стоимостью (минимальная цена × число людей). " +
+            "Выставки и музеи — в свободное время 10:00–18:00, посещение 90 мин. Несовместимые условия — ok: false и violations: какое условие мешает и минимальная правка.",
+          parameters: [
+            { name: "date", in: "query", schema: { type: "string", format: "date" }, description: "День (по умолчанию ближайшая суббота)" },
+            { name: "city", in: "query", schema: { type: "string", default: "Уфа" } },
+            { name: "budget", in: "query", schema: { type: "integer" }, description: "Бюджет на всех, ₽" },
+            { name: "persons", in: "query", schema: { type: "integer", default: 1 } },
+            { name: "age", in: "query", schema: { type: "integer" }, description: "Возраст младшего участника" },
+            { name: "from", in: "query", schema: { type: "string", default: "10:00" }, description: "Начало свободного окна, HH:MM" },
+            { name: "to", in: "query", schema: { type: "string", default: "22:00" }, description: "Конец свободного окна, HH:MM" },
+            { name: "maxTravelMin", in: "query", schema: { type: "integer", default: 40 }, description: "Предел одного переезда, мин" },
+            { name: "count", in: "query", schema: { type: "integer", minimum: 2, maximum: 4, default: 3 } },
+          ],
+          responses: {
+            "200": {
+              description:
+                "{ ok: true, input, items: [{ event, start, end, flexible, travelMin, cost }], totalCost, unknownPrice, travelMin, note } или { ok: false, input, violations: [{ constraint, message, fix }], best }",
+            },
+            "400": err("Неверные параметры", { code: "bad_request", message: "Неверные параметры плана", details: [{ param: "date", problem: "Invalid string" }] }),
+          },
+        },
+      },
       "/api/v1/subscriptions/{id}": {
         get: {
           summary: "Лента подписки: актуальные события, сначала недавно добавленные",
