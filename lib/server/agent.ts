@@ -888,6 +888,11 @@ export function matchReasons(e: EventItem, f: EventFilter, L: Record<keyof (type
   else if (f.priceMax != null && e.priceMin != null) out.push(`${e.priceMin <= f.priceMax ? "✓" : "✗"} ${e.priceMin === 0 ? L.free : `от ${e.priceMin} ₽`} (≤ ${f.priceMax} ₽)`);
   if (f.age != null) out.push(e.ageLimit == null ? `? ${L.ageUnknown}` : `${e.ageLimit <= f.age ? "✓" : "✗"} ${e.ageLimit}+`);
   if (f.lang === "ba") out.push(`✓ ${L.bashkir}`);
+  if (f.fromHour != null) {
+    const hm = e.startsAt.toLocaleTimeString("ru-RU", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
+    const multi = (e.endsAt?.getTime() ?? 0) - e.startsAt.getTime() > 12 * 3_600_000;
+    if (!multi) out.push(`${Number(hm.slice(0, 2)) >= f.fromHour ? "✓" : "✗"} ${hm}`);
+  }
   if (f.durationMax != null) {
     const span = e.endsAt ? e.endsAt.getTime() - e.startsAt.getTime() : null;
     const d = e.durationMin ?? (span != null && span < 12 * 3_600_000 ? Math.round(span / 60_000) : null);
