@@ -69,12 +69,14 @@ try {
   await db.$disconnect();
   await target.end();
 
-  const run = spawnSync(process.execPath, [fileURLToPath(new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url)), "--conditions=react-server", "scripts/eval.mts", ...process.argv.slice(2).filter((a) => a !== "--fresh")], {
+  const run = spawnSync(process.execPath, [fileURLToPath(new URL("../node_modules/tsx/dist/cli.mjs", import.meta.url)), "--conditions=react-server", "scripts/eval.mts", ...process.argv.slice(2).filter((a) => a !== "--fresh" && a !== "--keep-db")], {
     env: { ...env, EVAL_SCENARIO: JSON.stringify(scenario) },
     stdio: "inherit",
   });
   status = run.status ?? 1;
 } finally {
+  // --keep-db — оставить временную базу для разбора трасс (имя печатается выше); удалить потом вручную
+  if (process.argv.includes("--keep-db")) { console.log(`Временная база оставлена: ${name}`); await admin.end(); process.exit(status); }
   await admin.query(`SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`, [name]).catch(() => undefined);
   await admin.query(`DROP DATABASE IF EXISTS "${name}"`);
   await admin.end();
