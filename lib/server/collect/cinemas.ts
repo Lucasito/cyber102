@@ -1,5 +1,6 @@
 import "server-only";
 import { localDay } from "../events";
+import { inBashkortostan, RB_SETTLEMENTS } from "../normalize";
 import { decodeEntities, fetchText } from "./fetch";
 
 // Парсеры расписаний кинотеатров (docs/CINEMA_SOURCES.md) — без ИИ: сеансы и так структурированы в HTML
@@ -29,7 +30,31 @@ export type Session = {
   pushkin?: boolean;
   description?: string;
   exact?: Date; // точное начало, если сайт его даёт (тогда date/time только для подписи)
+  venue?: string; // кинотеатр сеанса, если страница его называет (сетевые сайты: несколько кинотеатров)
+  address?: string; // его адрес со страницы — по нему отсекаются сеансы вне Башкортостана
 };
+
+const STREET = /(^|\s)(ул|улица|пр|просп|проспект|пер|переулок|бул|бульвар|ш|шоссе|пл|площадь|д|дом|мкр|тц|трц|трк|ткц)\.?(\s|$)/i;
+/** Город из адреса: «г. Уфа, ул. Ферина, 29» → Уфа; «Бузулук, ул. …» → Бузулук; «ул. Артёма, 96» → null. */
+export function cityFromAddress(address: string): string | null {
+  const g = address.match(/(?:^|[\s,])(?:г\.|город)\s*([А-ЯЁ][А-Яа-яЁё-]+(?:\s[А-ЯЁ][а-яё-]+)?)/);
+  if (g) return g[1];
+  const first = address.split(",")[0].trim();
+  if (first && !STREET.test(first) && !/\d/.test(first) && /^[А-ЯЁ]/.test(first)) return first;
+  return null;
+}
+
+/**
+ * Сеанс в Башкортостане? Адрес с городом — город должен быть из справочника РБ; адрес без города
+ * («ул. Артёма, 96») и сеанс без адреса — по городу источника (у источников кинотеатров он задан и проверен).
+ */
+export function inRb(s: Pick<Session, "address">): boolean {
+  if (!s.address) return true;
+  const city = cityFromAddress(s.address);
+  if (city) return inBashkortostan(city);
+  return true;
+}
+const settlementIn = (address: string) => RB_SETTLEMENTS.find((c) => new RegExp(`(^|[\\s,.])${c}([\\s,]|$)`).test(address)) ?? null;
 
 /** Сколько дней расписания собирать: дальше кинотеатры обычно ещё не публикуют сеансы. */
 export const CINEMA_DAYS = 5;
@@ -88,6 +113,8 @@ export function sessionRows(prefix: string, sessions: Session[], now = new Date(
     if (!title || !/^\d{1,2}:\d\d$/.test(s.time) && !s.exact) continue;
     const start = s.exact ?? sessionStart(s.date, s.time);
     if (isNaN(start.getTime()) || start < now) continue;
+    // Только Башкортостан: сеанс кинотеатра сети в другом регионе не попадает в афишу
+    if (!inRb(s)) continue;
     const externalId = `${prefix}:${s.id}`;
     if (seen.has(externalId)) continue;
     seen.add(externalId);
@@ -96,6 +123,10 @@ export function sessionRows(prefix: string, sessions: Session[], now = new Date(
       externalId,
       title,
       dateStart: iso(start),
+      // Кинотеатр со страницы: свой — источник заменит на свою площадку с адресом и координатами (sameBuilding),
+      // другой кинотеатр сети получит свою площадку и город из адреса
+      ...(s.venue ? { venue: s.venue } : {}),
+      ...(s.address && (cityFromAddress(s.address) ?? settlementIn(s.address)) ? { city: cityFromAddress(s.address) ?? settlementIn(s.address) } : {}),
       sourceUrl: s.sourceUrl,
       ...(s.ticketUrl ? { ticketUrl: s.ticketUrl } : {}),
       ...(s.price != null ? { priceMin: s.price } : {}),
@@ -145,15 +176,21 @@ export function parsePremierzal(html: string, pageUrl: string): Session[] {
       imageUrl: pick(block, /film-mini__poster-wrapper">\s*<img src="([^"]+)"/),
       pushkin: block.includes("film-mini__pushkin"),
     };
-    for (const group of block.split('<div class="schedule__session">').slice(1)) {
+    for (const theatre of block.split('<div class="schedule__theatre"').slice(1)) {
+    const place = {
+      venue: clean(pick(theatre, /class="schedule__theatre-name"[^>]*>([\s\S]*?)<\/a>/)) || undefined,
+      address: clean(pick(theatre, /class="schedule__theatre-city">([\s\S]*?)<\/div>/)) || undefined,
+    };
+    for (const group of theatre.split('<div class="schedule__session">').slice(1)) {
       const format = clean(pick(group, /schedule__session-format">([\s\S]*?)<\/div>/)) || undefined;
       for (const item of group.split(/(?=<div\s+class="schedule__session-time)/).slice(1)) {
         const id = pick(item, /data-session-id="([^"]+)"/);
         const date = item.match(/data-film-date="(\d\d)\.(\d\d)\.(\d{4})"/);
         const time = pick(item, /class="value">\s*(\d{1,2}:\d\d)/);
         if (!id || !date || !time) continue;
-        out.push({ ...common, id, date: `${date[3]}-${date[2]}-${date[1]}`, time, format, price: price(pick(item, /item-price">([\s\S]*?)<\/div>/)), sourceUrl: filmUrl });
+        out.push({ ...common, ...place, id, date: `${date[3]}-${date[2]}-${date[1]}`, time, format, price: price(pick(item, /item-price">([\s\S]*?)<\/div>/)), sourceUrl: filmUrl });
       }
+    }
     }
   }
   return out;
@@ -270,6 +307,8 @@ async function runCinemaPark(url: string) {
 export function parseMirage(html: string, pageUrl: string, day: string): Session[] {
   const out: Session[] = [];
   for (const box of html.split('<div class="session-box">').slice(1)) {
+    const venue = clean(pick(box, /class="md-title">[\s\S]*?<a[^>]*>([\s\S]*?)<\/a>/)) || undefined;
+    const address = clean(pick(box, /<div class="adds">([\s\S]*?)<\/div>/)) || undefined;
     for (const s of box.split('<div class="session">').slice(1)) {
       const href = pick(s, /href="(\/ticket_new\/([^"/]+)\/?)"/);
       const id = pick(s, /href="\/ticket_new\/([^"/]+)/);
@@ -278,6 +317,8 @@ export function parseMirage(html: string, pageUrl: string, day: string): Session
       const prices = [...(pick(s, /class="place-price">([\s\S]*?)<\/a>/) ?? "").matchAll(/(\d[\d\s]*)₽/g)].map((m) => price(m[1])).filter((n): n is number => n != null);
       out.push({
         id,
+        venue,
+        address,
         title: clean(pick(s, /<div class="title">([\s\S]*?)<\/div>/)),
         date: day,
         time,
@@ -331,6 +372,16 @@ export function parseP24(html: string, pageUrl: string): Session[] {
   const raw = at >= 0 ? balanced(flight, at + 9) : null;
   if (!raw) throw new Error("на странице нет расписания (структура сайта изменилась?)");
   const events = (JSON.parse(raw) as { events?: P24Event[] }).events ?? [];
+  // Кинотеатры (площадки) по коду из расписания: "facilities":[{"uuid", "name", "address", …}]
+  const facilities = new Map<string, { venue?: string; address?: string }>();
+  for (let at = flight.indexOf('"facilities":['); at >= 0; at = flight.indexOf('"facilities":[', at + 1)) {
+    try {
+      for (const f of JSON.parse(balanced(flight, at + 13) ?? "[]") as { uuid?: string; name?: string; address?: string }[]) {
+        if (f?.uuid && f.name && !facilities.has(f.uuid)) facilities.set(f.uuid, { venue: f.name, address: f.address });
+      }
+    } catch { /* не список площадок */ }
+  }
+  const facility = (id: string) => facilities.get(id) ?? {};
   const out: Session[] = [];
   for (const e of events) {
     const info = e.info ?? {};
@@ -344,12 +395,13 @@ export function parseP24(html: string, pageUrl: string): Session[] {
       description: info.description ? clean(info.description).slice(0, 1000) : undefined,
       sourceUrl: abs(`/events/${encodeURIComponent(e.href)}`, pageUrl),
     };
-    for (const byCity of Object.values(e.schedule ?? {})) for (const byPlace of Object.values(byCity)) for (const byHall of Object.values(byPlace)) for (const shows of Object.values(byHall)) {
+    for (const byCity of Object.values(e.schedule ?? {})) for (const byPlace of Object.values(byCity)) for (const [placeId, byHall] of Object.entries(byPlace)) for (const shows of Object.values(byHall)) {
+      const place = facility(placeId);
       for (const s of shows) {
         const m = s.date?.match(/^(\d{4})\/(\d\d)\/(\d\d) (\d{1,2}:\d\d)$/);
         if (!m) continue;
         const prices = (s.prices ?? []).map((p) => p.price).filter((n) => n > 0);
-        out.push({ ...common, id: s.uuid, date: `${m[1]}-${m[2]}-${m[3]}`, time: m[4], exact: s.realDate ? new Date(s.realDate) : undefined, hall: s.hall, format: s.formats?.join(", "), price: prices.length ? Math.min(...prices) : null, pushkin: s.isPushkinCard ?? e.isPushkinCard });
+        out.push({ ...common, ...place, id: s.uuid, date: `${m[1]}-${m[2]}-${m[3]}`, time: m[4], exact: s.realDate ? new Date(s.realDate) : undefined, hall: s.hall, format: s.formats?.join(", "), price: prices.length ? Math.min(...prices) : null, pushkin: s.isPushkinCard ?? e.isPushkinCard });
       }
     }
   }
@@ -395,7 +447,7 @@ export function nuxtPayload(html: string): unknown {
 }
 
 type C5Show = { id: number; date: string; time: string; formatName?: string; hallName?: string; hallCategory?: string; minPrice?: number };
-type C5Movie = { id: number; name?: string; description?: string; duration?: number; ageRating?: number | string; age?: number | string; genres?: { name?: string }[] | string[]; dates?: { cinemas?: { shows?: C5Show[] }[] }[] };
+type C5Movie = { id: number; name?: string; description?: string; duration?: number; ageRating?: number | string; age?: number | string; genres?: { name?: string }[] | string[]; dates?: { cinemas?: { name?: string; address?: string; shows?: C5Show[] }[] }[] };
 
 export function parseCinema5Movie(html: string, pageUrl: string): Session[] {
   const root = nuxtPayload(html);
@@ -417,6 +469,8 @@ export function parseCinema5Movie(html: string, pageUrl: string): Session[] {
     if (!/^\d{4}-\d\d-\d\d$/.test(s.date) || !/^\d{1,2}:\d\d$/.test(s.time)) continue;
     out.push({
       id: String(s.id),
+      venue: c.name,
+      address: c.address,
       title: mv.name!,
       date: s.date,
       time: s.time,

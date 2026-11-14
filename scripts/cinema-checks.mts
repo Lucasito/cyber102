@@ -6,7 +6,7 @@
 import "dotenv/config";
 import assert from "node:assert/strict";
 import { readFileSync, existsSync } from "node:fs";
-import { CINEMA_ADAPTERS, dayFromWords, parseArsenal, parseCinemaPark, parseMirage, parseP24, parsePremierzal, parseRodina, parseUltra, sessionRows, sessionStart, type Session } from "../lib/server/collect/cinemas.ts";
+import { CINEMA_ADAPTERS, cityFromAddress, dayFromWords, parseArsenal, parseCinemaPark, parseMirage, parseP24, parsePremierzal, parseRodina, parseUltra, sessionRows, sessionStart, type Session } from "../lib/server/collect/cinemas.ts";
 
 let failed = 0;
 const check = (name: string, fn: () => void) => {
@@ -35,6 +35,27 @@ check("строки импорта: категория кино, без прош
   assert.equal(rows.length, 2);
   assert.deepEqual([rows[0].title, rows[0].dateStart, rows[0].category, rows[0].priceMin, rows[0].ageLimit, rows[0].externalId], ["Фильм", "2026-11-14T19:00:00+05:00", "cinema", 350, 12, "t:1"]);
   assert.equal(rows[1].dateStart, "2026-11-15T01:10:00+05:00");
+});
+
+check("город из адреса кинотеатра", () => {
+  assert.equal(cityFromAddress('г. Уфа, ул. Ферина, д. 29, ТЦ "Акварин"'), "Уфа");
+  assert.equal(cityFromAddress("г. Стерлитамак, ул. Худайбердина 120, ТЦ Фабри, 4 этаж"), "Стерлитамак");
+  assert.equal(cityFromAddress("Бузулук, ул. Ленина, 1"), "Бузулук");
+  assert.equal(cityFromAddress("ул. Артема, 96"), null);
+  assert.equal(cityFromAddress("ТЦ «Фабри»"), null);
+});
+check("сеансы кинотеатров сети вне Башкортостана отбрасываются, свой и другой кинотеатр РБ — остаются", () => {
+  const now = new Date("2026-11-14T12:00:00+05:00");
+  const base: Session = { id: "1", title: "Фильм", date: "2026-11-14", time: "19:00", sourceUrl: "https://example.org/s" };
+  const rows = sessionRows("t", [
+    { ...base, id: "ufa", venue: 'Синема 5 ТЦ "Акварин"', address: 'г. Уфа, ул. Ферина, д. 29' },
+    { ...base, id: "buzuluk", venue: "Синема 5 Бузулук", address: "г. Бузулук, ул. Ленина, 1" },
+    { ...base, id: "orenburg", venue: "Синема 5", address: "Оренбург, пр. Победы, 10" },
+    { ...base, id: "str", venue: "Синема 5 Стерлитамак", address: "г. Стерлитамак, пр. Октября, 1" },
+    { ...base, id: "noaddr" },
+  ], now);
+  assert.deepEqual(rows.map((r) => r.externalId), ["t:ufa", "t:str", "t:noaddr"]);
+  assert.deepEqual([rows[0].venue, rows[0].city, rows[1].city, rows[2].city], ['Синема 5 ТЦ "Акварин"', "Уфа", "Стерлитамак", undefined]);
 });
 
 const dirArg = process.argv.indexOf("--dir");
