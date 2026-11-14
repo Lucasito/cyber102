@@ -452,6 +452,12 @@ model Source {
   lastRunAt     DateTime?
   lastStatus    String? // ok | error
   lastMessage   String?
+  // Здоровье источника (lib/server/source-health.ts): сколько записей дал сбор и обычный уровень
+  lastCount     Int?
+  avgCount      Float? // скользящее среднее числа записей
+  failStreak    Int          @default(0) // ошибок сбора подряд
+  healthIssue   String? // текущая проблема: перестал отдавать события, резкое падение, ошибки подряд
+  healthSince   DateTime? // с какого сбора проблема
   createdBy     String?
   items         SourceItem[]
   createdAt     DateTime     @default(now())

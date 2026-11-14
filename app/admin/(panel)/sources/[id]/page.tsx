@@ -49,6 +49,14 @@ export default async function SourcePage({ params }: { params: Promise<{ id: str
               Последний сбор {when(source.lastRunAt)}: {source.lastMessage}
             </p>
           )}
+          {source.healthIssue && (
+            <p className="rounded-xl bg-red-50 p-3 text-sm text-red-800">
+              Источник {source.healthIssue}{source.healthSince && ` (с ${when(source.healthSince)})`}. Администраторам отправлено письмо; следующее — когда источник снова заработает.
+            </p>
+          )}
+          {source.lastCount != null && source.avgCount != null && (
+            <p className="text-xs text-stone-500">Записей в последнем сборе: {source.lastCount}, обычно ~{Math.round(source.avgCount)}.</p>
+          )}
           <SourcePreview id={source.id} action={previewSourceAction} ai={source.kind === "rss_ai" || source.kind === "html_ai"} />
           <div className="flex flex-wrap gap-3">
             <ActionButton action={runSourceNow.bind(null, source.id)}>Собрать сейчас</ActionButton>

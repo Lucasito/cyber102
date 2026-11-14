@@ -5,6 +5,7 @@ import { aiConfigured, tokensCostRub, withAiUsage } from "../ai";
 import { db } from "../db";
 import { importRows, validateRows, type ImportReport, type ValidatedRow } from "../import";
 import { log } from "../log";
+import { recordSourceHealth } from "../source-health";
 import { ADAPTERS } from "./adapters";
 import { extractEvent, extractEventList } from "./ai-extract";
 import { cachedPage, htmlToText, type PageCache } from "./fetch";
@@ -317,11 +318,14 @@ export async function runSource(sourceId: string, userLogin: string | null): Pro
     if (tokens) parts.push(`ИИ: ${tokens} ток. (~${costRub.toFixed(2)} ₽)`);
     const message = [got.message, parts.join(", ")].filter(Boolean).join(". ");
     await db.source.update({ where: { id: source.id }, data: { lastRunAt: new Date(), lastStatus: "ok", lastMessage: message.slice(0, 500) } });
+    // Здоровье: сколько записей отдал источник (лента, страница, парсер) против его обычного уровня
+    await recordSourceHealth(source, { ok: true, count: got.feedItems });
     log("info", "source_collected", { source: source.code, created: report?.created ?? 0, rejected: report?.rejected ?? 0, tokens });
     return { feedItems: got.feedItems, report, skipped: got.skipped.length, message, tokens, costRub };
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     await db.source.update({ where: { id: source.id }, data: { lastRunAt: new Date(), lastStatus: "error", lastMessage: message.slice(0, 500) } });
+    await recordSourceHealth(source, { ok: false, error: message });
     log("warn", "source_failed", { source: source.code, error: message });
     throw e;
   }

@@ -36,6 +36,10 @@ export default async function AdminOverview() {
   const applications = await db.adminUser.count({ where: { pendingApproval: true } });
   if (applications) todo.push({ text: `${applications} заявок организаторов ждут решения`, href: "/admin/organizers" });
   if (!sources) todo.push({ text: "Ни один источник не включён — новые события сами не появятся", href: "/admin/sources" });
+  // Источники с проблемой сбора (перестали отдавать события, резкое падение, ошибки подряд)
+  for (const s of await db.source.findMany({ where: { enabled: true, healthIssue: { not: null } }, select: { id: true, name: true, healthIssue: true }, take: 5 })) {
+    todo.push({ text: `Источник «${s.name}»: ${s.healthIssue}`, href: `/admin/sources/${s.id}` });
+  }
   if (isAdmin) {
     if (!ai?.enabled || !provider) todo.push({ text: "ИИ-помощник выключен или не настроен — работает обычный поиск по правилам", href: "/admin/ai" });
     if (!max?.enabled && !tg?.enabled) todo.push({ text: "Ни один бот не включён", href: "/admin/bots" });

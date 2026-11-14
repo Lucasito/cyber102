@@ -3,11 +3,17 @@ import { PageTitle, Section } from "@/components/admin/blocks";
 import { fmtDateTime } from "@/components/admin/event-badges";
 import { requireAdmin } from "@/lib/server/admin";
 import { QUALITY_ISSUES, qualityReport } from "@/lib/server/quality";
+import { ActionButton } from "@/components/admin/ui";
+import { ACCURACY_KEY, type AccuracyReport } from "@/lib/server/afisha-accuracy";
+import { db } from "@/lib/server/db";
+import { runAccuracyCheck } from "@/app/admin/quality-actions";
 
 export default async function AdminQuality({ searchParams }: { searchParams: Promise<{ issue?: string; q?: string; days?: string; publication?: string; page?: string }> }) {
   await requireAdmin("MODERATOR");
   const report = await qualityReport(await searchParams);
   const { items, counts, total, pages, page, issue, q, days, publication, now } = report;
+  const accuracy = (await db.setting.findUnique({ where: { key: ACCURACY_KEY } }))?.value as AccuracyReport | undefined;
+  const pct = (a: number, b: number) => (b ? `${Math.round((a / b) * 100)} %` : "—");
   const href = (patch: Record<string, string | number>) => {
     const params = new URLSearchParams({ issue, q, days, publication, page: "1" });
     for (const [key, value] of Object.entries(patch)) params.set(key, String(value));
@@ -17,6 +23,23 @@ export default async function AdminQuality({ searchParams }: { searchParams: Pro
   return (
     <>
       <PageTitle title="Качество афиши" desc="Сначала идущие сейчас и ближайшие события. Исправляйте сведения по источнику: нулевая цена и возраст 0+ считаются заполненными." />
+      <Section title="Точность афиши (ТЗ 9.2, метрики 10–11)">
+        <div className="space-y-3 text-sm">
+          <p className="text-stone-600">50 опубликованных предстоящих карточек, поровну по источникам, сверяются со страницей источника: название, дата, время, цена. Плюс доля дублей и ошибки импорта за неделю. Проверка идёт около минуты.</p>
+          {accuracy ? <>
+            <p>
+              Проверено {new Date(accuracy.at).toLocaleString("ru-RU", { timeZone: "Asia/Yekaterinburg" })}: точность <b className={accuracy.checked && accuracy.accurate / accuracy.checked >= 0.9 ? "text-emerald-700" : "text-red-700"}>{pct(accuracy.accurate, accuracy.checked)}</b> ({accuracy.accurate}/{accuracy.checked}, порог 90 %),
+              дубли <b className={accuracy.duplicates.share <= 0.05 ? "text-emerald-700" : "text-red-700"}>{pct(accuracy.duplicates.extra, accuracy.duplicates.events)}</b> (порог 5 %),
+              отменённые как актуальные: <b className={accuracy.cancelledShown.length ? "text-amber-700" : "text-emerald-700"}>{accuracy.cancelledShown.length}</b>{accuracy.unverified ? `, не загрузилось страниц: ${accuracy.unverified}` : ""}.
+            </p>
+            {Object.keys(accuracy.importErrors.byCategory).length > 0 && <p className="text-stone-600">Отклонено импортом за {accuracy.importErrors.days} дн.: {Object.entries(accuracy.importErrors.byCategory).map(([k, n]) => `${k} — ${n}`).join("; ")}.{Object.keys(accuracy.changes.byCategory).length > 0 && ` Конфликты источников: ${Object.entries(accuracy.changes.byCategory).map(([k, n]) => `${k} — ${n}`).join("; ")}.`}</p>}
+            {accuracy.cards.some((c) => c.result !== "ok") && <details><summary className="cursor-pointer text-stone-700">Несовпадения — проверить вручную ({accuracy.cards.filter((c) => c.result !== "ok").length})</summary>
+              <ul className="mt-2 space-y-1">{accuracy.cards.filter((c) => c.result !== "ok").map((c) => <li key={c.id}><Link href={`/admin/events/${c.id}`} className="hover:underline">{c.title}</Link> · <a href={c.url} target="_blank" rel="noopener noreferrer" className="text-stone-500 hover:underline">{c.source}</a> · <span className="text-red-700">{c.problems.length ? `не найдено: ${c.problems.join(", ")}` : c.warnings.join("; ")}</span></li>)}</ul>
+            </details>}
+          </> : <p className="text-stone-500">Проверка ещё не запускалась.</p>}
+          <ActionButton action={runAccuracyCheck}>Проверить точность сейчас</ActionButton>
+        </div>
+      </Section>
       <form action="/admin/quality" className="flex flex-wrap gap-3">
         <input type="hidden" name="issue" value={issue} />
         <label className="min-w-48 flex-1 text-sm">Поиск

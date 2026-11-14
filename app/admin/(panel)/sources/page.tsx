@@ -57,6 +57,7 @@ export default async function AdminSources() {
                     {SOURCE_KINDS[s.kind as SourceKind]?.label ?? s.kind} · {s.code} · {hostOf(s.url)}
                     {s.kind === "rss_ai" && ` · разобрано записей: ${s._count.items}`}
                   </div>
+                  {s.enabled && s.healthIssue && <div className="mt-1 text-xs font-medium text-red-700">⚠ {s.healthIssue}</div>}
                 </div>
                 <div className="text-right text-xs">
                   <div className={s.enabled ? "text-emerald-700" : "text-stone-400"}>{s.enabled ? (s.collectAt ? `ежедневно в ${s.collectAt}` : `раз в ${s.intervalHours} ч`) : "выключен"}</div>
