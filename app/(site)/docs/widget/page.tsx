@@ -23,6 +23,12 @@ export default async function WidgetBuilderPage() {
         Выберите, какие события показывать и как, — код ниже обновляется сразу. Вставьте его на страницу сайта: виджет работает во фрейме, не меняет стили и
         скрипты сайта и не использует cookies. События обновляются сами — период «выходные» всегда означает ближайшие выходные.
       </p>
+      <p className="mt-3">
+        <a href="/widget-demo" target="_blank" rel="noopener" className="font-medium text-[var(--brand)] hover:underline">
+          Посмотреть виджет на примере сайта ↗
+        </a>
+        <span className="text-sm text-stone-500"> — выдуманная страница со светлым, бежевым и тёмным фоном</span>
+      </p>
       <div className="mt-8">
         <WidgetBuilder base={base} cities={cities} categories={categories.map((c) => ({ value: c.slug, label: c.name }))} />
       </div>

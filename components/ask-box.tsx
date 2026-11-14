@@ -3,7 +3,7 @@
 import { ArrowUp, LoaderCircle, RotateCcw, Sparkles } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { EventCard } from "@/components/event-card";
-import { toCard, type CardEvent } from "@/lib/format";
+import { groupSessions, toCard, type CardEvent } from "@/lib/format";
 import { quickLabel, setBaOverrides, type DictKey, type Lang } from "@/lib/i18n";
 
 // Умный поиск в виде чата: до первого вопроса — строка ввода с примерами,
@@ -11,7 +11,7 @@ import { quickLabel, setBaOverrides, type DictKey, type Lang } from "@/lib/i18n"
 
 type T = Record<DictKey, string>;
 /** content — что видит пользователь; send — что уходит помощнику (быстрые ответы на башкирском отправляются по-русски). */
-type Msg = { role: "user" | "assistant"; content: string; send?: string; events?: CardEvent[]; suggestions?: string[]; error?: boolean; degraded?: boolean; ageNote?: boolean };
+type Msg = { role: "user" | "assistant"; content: string; send?: string; events?: CardEvent[]; suggestions?: string[]; error?: boolean; degraded?: boolean; ageNote?: boolean; why?: Record<string, string[]> };
 
 /** Этапы ожидания: запросы к ИИ идут по очереди, поэтому при наплыве ответ может занять до минуты. */
 const STAGES: [number, DictKey][] = [
@@ -74,14 +74,18 @@ function QuickReplies({ items, lang, onPick }: { items: string[]; lang: Lang; on
 }
 
 /** Подборка в чате: компактные строки, сначала 4, остальное — по кнопке. */
-function ChatEvents({ events, lang, t, first, ageNote }: { events: CardEvent[]; lang: Lang; t: T; first: number; ageNote?: boolean }) {
+function ChatEvents({ events, lang, t, first, ageNote, why }: { events: CardEvent[]; lang: Lang; t: T; first: number; ageNote?: boolean; why?: Record<string, string[]> }) {
   const [all, setAll] = useState(false);
   const shown = all ? events : events.slice(0, first);
   return (
     <div className="space-y-2 sm:ml-10">
       <div className="grid gap-2 lg:grid-cols-2">
         {shown.map((e) => (
-          <EventCard key={e.id} event={e} row lang={lang} ageNote={ageNote} />
+          <div key={e.id}>
+            <EventCard event={e} row lang={lang} ageNote={ageNote} />
+            {/* Почему в подборке: условия запроса, ✓ — выполнено, ✗ — пришлось снять (формирует сервер) */}
+            {!!why?.[e.id]?.length && <p className="mt-1 px-1 text-xs text-stone-500">{why[e.id].join(" · ")}</p>}
+          </div>
         ))}
       </div>
       {events.length > shown.length && (
@@ -129,7 +133,7 @@ export function AskBox({ examples, lang, t, chatEvents = 4, ba }: { examples: st
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? t.aiFailed);
-      setMessages([...next, { role: "assistant", content: data.text, events: (data.events ?? []).map(toCard), suggestions: data.suggestions ?? [], degraded: !!data.degraded, ageNote: data.filter?.age != null }]);
+      setMessages([...next, { role: "assistant", content: data.text, events: groupSessions((data.events ?? []).map(toCard)), suggestions: data.suggestions ?? [], degraded: !!data.degraded, ageNote: data.filter?.age != null, why: data.why }]);
     } catch (e) {
       setMessages([...next, { role: "assistant", content: e instanceof Error ? e.message : t.netError, error: true }]);
     } finally {
@@ -236,7 +240,7 @@ export function AskBox({ examples, lang, t, chatEvents = 4, ba }: { examples: st
                   {t.degradedNote}
                 </p>
               )}
-              {!!m.events?.length && <ChatEvents events={m.events} lang={lang} t={t} first={chatEvents} ageNote={m.ageNote} />}
+              {!!m.events?.length && <ChatEvents events={m.events} lang={lang} t={t} first={chatEvents} ageNote={m.ageNote} why={m.why} />}
               {i === lastAssistant && !loading && (
                 <div className="sm:ml-10">
                   <QuickReplies

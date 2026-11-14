@@ -92,6 +92,22 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
   const more = e.categoryId
     ? (await searchEvents({ category: e.category!.slug, limit: 4, offset: 0 })).items.filter((x) => x.id !== e.id).slice(0, 3)
     : [];
+  // Другие показы того же события на той же площадке — в каталоге они сведены в одну карточку (groupSessions)
+  const sessions = e.venueId
+    ? await db.event.findMany({
+        where: {
+          id: { not: e.id },
+          venueId: e.venueId,
+          title: { equals: e.title, mode: "insensitive" },
+          publication: "PUBLISHED",
+          status: { notIn: ["PAST", "CANCELLED"] },
+          startsAt: { gte: new Date() },
+        },
+        orderBy: { startsAt: "asc" },
+        take: 20,
+        select: { id: true, startsAt: true },
+      })
+    : [];
 
   return (
     <main className="mx-auto max-w-6xl px-4 pt-6 pb-16">
@@ -122,6 +138,18 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
             <Fact icon={Clock}>
               <p className="first-letter:uppercase">{formatDateLongL(e.startsAt.toISOString(), lang)}</p>
               {end && <p className="text-sm text-stone-500">{t("untilTime", { time: end })}</p>}
+              {sessions.length > 0 && (
+                <div className="mt-2">
+                  <p className="text-sm text-stone-500">{t("otherSessions")}</p>
+                  <div className="mt-1 flex flex-wrap gap-1.5">
+                    {sessions.map((s) => (
+                      <Link key={s.id} href={`/events/${s.id}`} className="rounded-full bg-white px-3 py-1 text-sm ring-1 ring-black/10 hover:ring-black/30">
+                        {s.startsAt.toLocaleString("ru-RU", { timeZone: TZ, weekday: "short", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}
+                      </Link>
+                    ))}
+                  </div>
+                </div>
+              )}
             </Fact>
             {e.venue && (
               <Fact icon={MapPin}>

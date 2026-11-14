@@ -3,6 +3,7 @@
  *   <script src="https://<домен-афиши>/widget.js" async></script>
  * Все атрибуты data-* (кроме data-height) передаются виджету как параметры: data-price-max → priceMax и т. д.
  * data-height: число пикселей или "auto" (по умолчанию) — высота подстраивается под содержимое.
+ * Оформление: data-layout, data-cols, data-img="0", data-theme="dark", data-bg, data-radius, data-font, data-accent, data-title.
  * Работает через iframe — не вмешивается в стили и скрипты сайта, cookies не использует. */
 (function () {
   var src = document.currentScript && document.currentScript.src;
@@ -15,6 +16,8 @@
     if (f) f.style.height = Math.ceil(e.data.height) + "px";
   });
 
+  // Скрипт может стоять в <head> или выполниться раньше разметки (async) — ищем блоки, когда страница разобрана
+  function init() {
   document.querySelectorAll("[data-afisha-widget]").forEach(function (el, i) {
     if (el.getAttribute("data-afisha-ready")) return;
     el.setAttribute("data-afisha-ready", "1");
@@ -35,4 +38,7 @@
     if (auto) frames[wid] = f;
     el.appendChild(f);
   });
+  }
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
+  else init();
 })();

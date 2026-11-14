@@ -1,4 +1,4 @@
-import { CATEGORY_STYLE, DEFAULT_STYLE, formatDistance, illustrationFor, type CardEvent } from "@/lib/format";
+import { CATEGORY_STYLE, DEFAULT_STYLE, formatDistance, groupSessions, illustrationFor, type CardEvent } from "@/lib/format";
 import { categoryName, dayPartsL, formatPriceL, statusLabel, tr, type Lang } from "@/lib/i18n";
 
 /**
@@ -13,6 +13,7 @@ export function EventCard({
   lang = "ru",
   accent = false,
   ageNote = false,
+  image = true,
 }: {
   event: CardEvent;
   target?: string;
@@ -23,6 +24,8 @@ export function EventCard({
   accent?: boolean;
   /** Подборка с фильтром по возрасту: у события без пометки — «возраст не указан» */
   ageNote?: boolean;
+  /** Виджет: без картинки — компактная карточка, дата текстом */
+  image?: boolean;
 }) {
   // Идёт прямо сейчас. Многодневное (выставка) — показываем дату окончания «до 11 дек»; короткое — свою дату
   const now = new Date();
@@ -30,6 +33,12 @@ export function EventCard({
   const ongoing = live && new Date(e.endsAt!).getTime() - new Date(e.startsAt).getTime() > 86_400_000;
   const d = dayPartsL(e.startsAt, lang);
   const shown = ongoing ? dayPartsL(e.endsAt!, lang) : d;
+  // Несколько показов одного события (groupSessions) — диапазон дат «18–19 нояб» и «2 показа»
+  const n = e.sessions ?? 1;
+  const last = n > 1 && e.lastStartsAt ? dayPartsL(e.lastStartsAt, lang) : null;
+  const sameDay = !!last && last.day === d.day && last.month === d.month;
+  const badge = last && !sameDay ? { day: `${d.day}–${last.day}`, month: last.month === d.month ? d.month : `${d.month}–${last.month}` } : shown;
+  const sessionsText = n > 1 ? tr(lang, [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "sessionsFew" : "sessionsMany", { n }) : "";
   const status = statusLabel(e.status, lang);
   const inactive = e.status === "CANCELLED" || e.status === "PAST";
   const style = CATEGORY_STYLE[e.category?.slug ?? ""] ?? DEFAULT_STYLE;
@@ -43,7 +52,7 @@ export function EventCard({
       target={target}
       className={`group flex flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-black/5 transition hover:shadow-lg hover:shadow-black/5 sm:hover:-translate-y-0.5 ${row} ${stripe} ${inactive ? "opacity-55" : ""}`}
     >
-      <div className={`relative shrink-0 overflow-hidden ${style} ${tile ? "aspect-[16/9]" : compact ? "w-24" : "aspect-[16/9] max-sm:aspect-auto max-sm:w-24"}`}>
+      {image && <div className={`relative shrink-0 overflow-hidden ${style} ${tile ? "aspect-[16/9]" : compact ? "w-24" : "aspect-[16/9] max-sm:aspect-auto max-sm:w-24"}`}>
         {e.imageUrl ? (
           // eslint-disable-next-line @next/next/no-img-element -- внешние картинки источников, домены заранее неизвестны
           <img src={e.imageUrl} alt="" loading="lazy" className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105" />
@@ -55,15 +64,18 @@ export function EventCard({
           className={`absolute flex flex-col items-center rounded-xl bg-white/95 px-2.5 py-1.5 leading-none text-stone-900 shadow-sm ${tile ? "top-3 left-3" : compact ? "top-2.5 left-1/2 -translate-x-1/2 px-2 py-1" : "top-3 left-3 max-sm:top-2.5 max-sm:left-1/2 max-sm:-translate-x-1/2 max-sm:px-2 max-sm:py-1"}`}
         >
           {ongoing && lang === "ru" && <span className="mb-0.5 text-[10px] text-stone-500">{tr(lang, "until")}</span>}
-          <span className={`text-lg font-semibold tabular-nums ${accent ? "text-[var(--brand)]" : ""}`}>{shown.day}</span>
-          <span className="mt-0.5 text-[11px] text-stone-500 uppercase">{shown.month}</span>
+          <span className={`font-semibold tabular-nums ${badge.day.length > 3 ? "text-base" : "text-lg"} ${accent ? "text-[var(--brand)]" : ""}`}>{badge.day}</span>
+          <span className="mt-0.5 text-[11px] text-stone-500 uppercase">{badge.month}</span>
           {ongoing && lang === "ba" && <span className="mt-0.5 text-[10px] text-stone-500">{tr(lang, "until")}</span>}
         </div>
-      </div>
+      </div>}
       <div className={`flex min-w-0 flex-1 flex-col gap-1 p-4 ${compact ? "py-3" : "max-sm:py-3"}`}>
         <div className="flex items-center gap-2 text-xs text-stone-500">
           {e.category && <span className="font-medium text-[var(--brand)]">{categoryName(e.category.slug, e.category.name, lang)}</span>}
-          <span>{ongoing ? tr(lang, "live") : live ? tr(lang, "liveUntil", { time: dayPartsL(e.endsAt!, lang).time }) : `${d.weekday}, ${d.time}`}</span>
+          {!image && !live && <span className={`font-semibold ${accent ? "text-[var(--brand)]" : "text-stone-700"}`}>{badge.day} {badge.month}</span>}
+          <span>
+            {ongoing ? tr(lang, "live") : live ? tr(lang, "liveUntil", { time: dayPartsL(e.endsAt!, lang).time }) : sessionsText && !sameDay ? sessionsText : `${d.weekday}, ${d.time}${sessionsText ? ` · ${sessionsText}` : ""}`}
+          </span>
           {e.ageLimit != null && <span className="ml-auto rounded border border-stone-300 px-1 text-[11px]">{e.ageLimit}+</span>}
           {e.ageLimit == null && ageNote && (
             <span className="ml-auto rounded border border-amber-300 bg-amber-50 px-1 text-[11px] text-amber-800" title={tr(lang, "ageUnknownHint")}>
@@ -90,7 +102,7 @@ export function EventCard({
 export function EventGrid({ events, target, lang = "ru", ageNote = false }: { events: CardEvent[]; target?: string; lang?: Lang; ageNote?: boolean }) {
   return (
     <div className="grid gap-3 sm:grid-cols-2 sm:gap-4 lg:grid-cols-3">
-      {events.map((e) => (
+      {groupSessions(events).map((e) => (
         <EventCard key={e.id} event={e} target={target} lang={lang} ageNote={ageNote} />
       ))}
     </div>

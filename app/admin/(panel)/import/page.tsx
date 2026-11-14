@@ -5,7 +5,7 @@ import { ImportForm } from "@/components/admin/import-form";
 import { requireAdmin } from "@/lib/server/admin";
 import { db } from "@/lib/server/db";
 
-/** Наглядный пример для страницы: строки образца и что с ними сделает импорт. */
+/** Наглядный пример для страницы: строки образца и что с ними сделает импорт (последняя колонка — итог, вид итога). */
 const SAMPLE: string[][] = [
   ["Вечер камерной музыки", "концерт", "2027-03-14 19:00", "Уфа", "Пример-зал", "от 300 до 800 ₽", "12+", "https://…/events/1", "", "Добавлено и опубликовано: цена 300–800 ₽, 12+"],
   ["Выставка графики", "выставка", "01.03.2027 10:00", "стерлитакмак", "Пример-галерея", "вход свободный", "0", "https://…/events/2", "", "Добавлено: город исправлен на «Стерлитамак», бесплатно"],
@@ -14,6 +14,16 @@ const SAMPLE: string[][] = [
   ["Гастроли", "концерт", "2027-03-18 19:00", "Казань", "Пример-зал", "500", "", "https://…/events/8", "", "Пропущено: вне Башкортостана"],
   ["Без источника", "концерт", "2027-03-15 19:00", "Уфа", "Пример-зал", "400", "", "", "", "Отклонено: нет ссылки на источник"],
 ];
+/** Вид итога по строке: цвет пометки и короткое слово. */
+const OUTCOME: Record<string, [string, string]> = {
+  "Добавлено и": ["Опубликовано", "bg-emerald-100 text-emerald-800"],
+  "Добавлено:": ["Опубликовано", "bg-emerald-100 text-emerald-800"],
+  "В модерацию": ["В модерацию", "bg-amber-100 text-amber-900"],
+  "Добавлено как": ["Отменено", "bg-stone-200 text-stone-700"],
+  Пропущено: ["Пропущено", "bg-stone-200 text-stone-700"],
+  Отклонено: ["Отклонено", "bg-red-100 text-red-800"],
+};
+const outcome = (text: string) => Object.entries(OUTCOME).find(([k]) => text.startsWith(k))?.[1] ?? ["", ""];
 const SAMPLE_CSV = [
   "title;category;date_start;city;venue;price;age_limit;source_url;status",
   ...SAMPLE.map((r) => r.slice(0, 9).map((c) => (c.includes(";") ? `"${c}"` : c)).join(";")),
@@ -33,31 +43,6 @@ export default async function AdminImport() {
       </Section>
       <Section title="Как подготовить файл" desc="Таблица, сохранённая как CSV (Excel: «Файл → Сохранить как → CSV UTF-8»), или JSON. Одна строка — один сеанс: два показа в 14:00 и 18:00 — две строки.">
         <div className="space-y-5 text-sm">
-          <div className="overflow-x-auto rounded-2xl ring-1 ring-black/5">
-            <table className="w-full text-left text-xs">
-              <thead className="bg-stone-100 text-stone-500">
-                <tr>
-                  {["title", "category", "date_start", "city", "venue", "price", "age_limit", "source_url", "status", "Что получится"].map((h) => (
-                    <th key={h} className="px-2.5 py-2 font-medium whitespace-nowrap">
-                      {h}
-                    </th>
-                  ))}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-black/5">
-                {SAMPLE.map((r) => (
-                  <tr key={r[0]}>
-                    {r.slice(0, 9).map((c, i) => (
-                      <td key={i} className="px-2.5 py-2 whitespace-nowrap text-stone-700">
-                        {c || <span className="text-stone-500">—</span>}
-                      </td>
-                    ))}
-                    <td className="min-w-56 px-2.5 py-2 text-stone-600">{r[9]}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
           <div className="grid gap-4 text-stone-600 sm:grid-cols-2">
             <p>
               <b className="text-stone-800">Обязательные колонки:</b> название (<code>title</code>), дата и время начала (<code>date_start</code>), город (
@@ -76,6 +61,29 @@ export default async function AdminImport() {
               <b className="text-stone-800">Что делает импорт:</b> исправляет опечатки в городах («стерлитакмак» → Стерлитамак), пропускает события вне Башкортостана и
               прошедшие, сводит одно событие из разных источников в одну карточку. Повторная загрузка того же файла ничего не дублирует.
             </p>
+          </div>
+          <div>
+            <p className="font-medium text-stone-800">Пример: шесть строк файла и что импорт сделает с каждой</p>
+            <ul className="mt-2 divide-y divide-black/5 rounded-2xl ring-1 ring-black/5">
+              {SAMPLE.map((r) => {
+                const [label, cls] = outcome(r[9]);
+                const facts = [r[1] || "без категории", r[2], [r[3], r[4]].join(", "), r[5] || "без цены", r[6] ? `${r[6].replace("+", "")}+` : "", r[8]].filter(Boolean);
+                return (
+                  <li key={r[0]} className="grid gap-x-4 gap-y-1.5 px-3 py-2.5 sm:grid-cols-[minmax(0,1fr)_minmax(0,18rem)]">
+                    <div className="min-w-0">
+                      <p className="font-medium text-stone-800">{r[0]}</p>
+                      <p className="text-xs text-stone-500">
+                        {facts.join(" · ")} · {r[7] ? "источник указан" : <span className="text-red-700">нет ссылки на источник</span>}
+                      </p>
+                    </div>
+                    <p className="text-xs text-stone-600">
+                      <span className={`mr-1.5 inline-block rounded-full px-2 py-0.5 font-medium ${cls}`}>{label}</span>
+                      {r[9].replace(/^[^:]*:\s*/, "")}
+                    </p>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
           <details>
             <summary className="cursor-pointer text-stone-600">Тот же пример в виде CSV</summary>

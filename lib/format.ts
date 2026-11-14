@@ -17,6 +17,9 @@ export type CardEvent = {
   category: { slug: string; name: string } | null;
   /** Расстояние от пользователя, км («Рядом со мной»). */
   distanceKm?: number | null;
+  /** Несколько показов одного события, сведённых в карточку (groupSessions): сколько и когда последний. */
+  sessions?: number;
+  lastStartsAt?: string;
 };
 
 type EventLike = Omit<CardEvent, "startsAt" | "endsAt" | "venue" | "category"> & {
@@ -41,6 +44,37 @@ export function toCard(e: EventLike): CardEvent {
     category: e.category ? { slug: e.category.slug, name: e.category.name } : null,
     distanceKm: e.distanceKm ?? null,
   };
+}
+
+/**
+ * Показы одного события (то же название и площадка) — одной карточкой: дата первого показа, диапазон дат
+ * и «N показов»; ссылка ведёт на ближайший, остальные даты — на странице события. Порядок сохраняется.
+ * Многодневные (выставки) и отменённые не сводим.
+ */
+export function groupSessions(events: CardEvent[]): CardEvent[] {
+  const out: CardEvent[] = [];
+  const byKey = new Map<string, CardEvent>();
+  for (const e of events) {
+    const multi = e.endsAt && new Date(e.endsAt).getTime() - new Date(e.startsAt).getTime() > 86_400_000;
+    const key = multi || e.status === "CANCELLED" || !e.venue ? null : [e.title.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim(), e.venue.name, e.venue.city].join("|");
+    const first = key ? byKey.get(key) : undefined;
+    if (!first) {
+      const card = { ...e };
+      out.push(card);
+      if (key) byKey.set(key, card);
+      continue;
+    }
+    first.sessions = (first.sessions ?? 1) + 1;
+    // ISO-строки в UTC сравниваются как даты
+    const last = first.lastStartsAt ?? first.startsAt;
+    first.lastStartsAt = e.startsAt > last ? e.startsAt : last;
+    if (e.startsAt < first.startsAt) Object.assign(first, { id: e.id, startsAt: e.startsAt, endsAt: e.endsAt });
+    // Цена — общий диапазон по всем показам
+    if (e.priceMin != null) first.priceMin = first.priceMin == null ? e.priceMin : Math.min(first.priceMin, e.priceMin);
+    if (e.priceMax != null) first.priceMax = first.priceMax == null ? e.priceMax : Math.max(first.priceMax, e.priceMax);
+    first.imageUrl ??= e.imageUrl;
+  }
+  return out;
 }
 
 export function formatDistance(km: number) {

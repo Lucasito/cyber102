@@ -22,6 +22,13 @@ type State = {
   accent: string;
   link: boolean;
   height: string;
+  cols: string;
+  img: boolean;
+  theme: string;
+  bg: string;
+  bgColor: string;
+  radius: string;
+  font: string;
 };
 
 const INITIAL: State = {
@@ -40,6 +47,13 @@ const INITIAL: State = {
   accent: "#0b7a55",
   link: true,
   height: "auto",
+  cols: "",
+  img: true,
+  theme: "light",
+  bg: "transparent",
+  bgColor: "#ffffff",
+  radius: "16",
+  font: "",
 };
 const DEFAULT_ACCENT = INITIAL.accent;
 
@@ -83,11 +97,26 @@ function widgetParams(s: State): [string, string][] {
   add("title", s.title.trim());
   if (s.accent.toLowerCase() !== DEFAULT_ACCENT) add("accent", s.accent.replace("#", ""));
   if (!s.link) add("link", "0");
+  if (s.layout === "grid") add("cols", s.cols);
+  if (!s.img) add("img", "0");
+  if (s.theme === "dark") add("theme", "dark");
+  if (s.bg === "white") add("bg", "white");
+  if (s.bg === "custom") add("bg", s.bgColor.replace("#", ""));
+  if (s.radius !== "16") add("radius", s.radius);
+  add("font", s.font);
   return p;
 }
 
 const attr = (k: string) => "data-" + k.replace(/[A-Z]/g, (c) => "-" + c.toLowerCase());
 const esc = (v: string) => v.replace(/&/g, "&amp;").replace(/"/g, "&quot;").replace(/</g, "&lt;");
+
+/** Фон страницы в предпросмотре — как будто виджет стоит на вашем сайте (в код не попадает). */
+const HOSTS: Opt[] = [
+  { value: "#ffffff", label: "Белый" },
+  { value: "#f3f1ec", label: "Светлый бежевый" },
+  { value: "#e8eef7", label: "Светлый голубой" },
+  { value: "#1c1917", label: "Тёмный" },
+];
 
 const inputCls = "w-full rounded-xl bg-white px-3 py-2 text-sm ring-1 ring-black/10 outline-none focus:ring-2 focus:ring-[var(--brand)]";
 
@@ -116,6 +145,7 @@ function CopyButton({ text }: { text: string }) {
 
 export function WidgetBuilder({ base, cities, categories }: { base: string; cities: string[]; categories: Opt[] }) {
   const [s, setS] = useState<State>(INITIAL);
+  const [host, setHost] = useState(HOSTS[0].value);
   const set = <K extends keyof State>(k: K, v: State[K]) => setS((old) => ({ ...old, [k]: v }));
   const params = useMemo(() => widgetParams(s), [s]);
 
@@ -227,6 +257,48 @@ export function WidgetBuilder({ base, cities, categories }: { base: string; citi
             <input className="h-9 w-full cursor-pointer rounded-xl bg-white ring-1 ring-black/10" type="color" value={s.accent} onChange={(e) => set("accent", e.target.value)} />
           </Field>
         </div>
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Колонок плиток">
+            <select className={inputCls} value={s.cols} disabled={s.layout !== "grid"} onChange={(e) => set("cols", e.target.value)}>
+              <option value="">По ширине</option>
+              <option value="1">1</option>
+              <option value="2">До 2</option>
+              <option value="3">До 3</option>
+              <option value="4">До 4</option>
+            </select>
+          </Field>
+          <Field label="Тема карточек">
+            <select className={inputCls} value={s.theme} onChange={(e) => set("theme", e.target.value)}>
+              <option value="light">Светлая</option>
+              <option value="dark">Тёмная</option>
+            </select>
+          </Field>
+          <Field label="Фон виджета">
+            <select className={inputCls} value={s.bg} onChange={(e) => set("bg", e.target.value)}>
+              <option value="transparent">Прозрачный</option>
+              <option value="white">Белый</option>
+              <option value="custom">Свой цвет</option>
+            </select>
+          </Field>
+          <Field label="Шрифт">
+            <select className={inputCls} value={s.font} onChange={(e) => set("font", e.target.value)}>
+              <option value="">Inter (как на афише)</option>
+              <option value="system">Системный</option>
+              <option value="serif">С засечками</option>
+            </select>
+          </Field>
+        </div>
+        {s.bg === "custom" && (
+          <Field label="Цвет фона">
+            <input className="h-9 w-full cursor-pointer rounded-xl bg-white ring-1 ring-black/10" type="color" value={s.bgColor} onChange={(e) => set("bgColor", e.target.value)} />
+          </Field>
+        )}
+        <Field label={`Скругление карточек: ${s.radius} px`}>
+          <input className="w-full accent-[var(--brand)]" type="range" min={0} max={24} step={2} value={s.radius} onChange={(e) => set("radius", e.target.value)} />
+        </Field>
+        <label className="flex items-center gap-2 text-sm">
+          <input type="checkbox" checked={s.img} onChange={(e) => set("img", e.target.checked)} /> Картинки событий
+        </label>
         <Field label="Заголовок над событиями">
           <input className={inputCls} value={s.title} onChange={(e) => set("title", e.target.value)} placeholder="без заголовка" maxLength={120} />
         </Field>
@@ -265,9 +337,26 @@ export function WidgetBuilder({ base, cities, categories }: { base: string; citi
           </details>
         </section>
         <section>
-          <h2 className="mb-2 font-semibold">Предпросмотр</h2>
-          <div className="overflow-hidden rounded-2xl bg-white ring-1 ring-black/10">
-            <iframe ref={frame} src={previewSrc} title="Предпросмотр виджета" className="block w-full border-0" style={{ height: previewHeight }} />
+          <div className="mb-2 flex flex-wrap items-center justify-between gap-3">
+            <h2 className="font-semibold">Предпросмотр</h2>
+            <div className="flex flex-wrap items-center gap-3 text-sm">
+              <label className="flex items-center gap-2 text-stone-600">
+                Фон вашего сайта
+                <select className="rounded-lg bg-white px-2 py-1 ring-1 ring-black/10" value={host} onChange={(e) => setHost(e.target.value)}>
+                  {HOSTS.map((h) => (
+                    <option key={h.value} value={h.value}>
+                      {h.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <a href={`/widget-demo?${query}`} target="_blank" rel="noopener" className="font-medium text-[var(--brand)] hover:underline">
+                На примере сайта ↗
+              </a>
+            </div>
+          </div>
+          <div className="overflow-hidden rounded-2xl p-3 ring-1 ring-black/10 transition-colors" style={{ background: host }}>
+            <iframe ref={frame} src={previewSrc} title="Предпросмотр виджета" className="block w-full border-0" style={{ height: previewHeight, colorScheme: "normal" }} />
           </div>
         </section>
       </div>
