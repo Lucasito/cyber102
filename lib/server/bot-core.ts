@@ -222,7 +222,7 @@ async function agentReply(platform: Platform, externalId: string, botUserId: str
     const list = events
       .map((e, i) => eventLine(e, i + 1, result.filter?.age != null) + moreSessions(groups[i].more) + (e.distanceKm != null ? ` · ${e.distanceKm < 1 ? "< 1" : Math.round(e.distanceKm)} км` : "") + (result.why?.[e.id]?.length ? `\n   ${result.why[e.id].join(" · ")}` : ""))
       .join("\n\n");
-    const notes = [result.degraded ? DEGRADED_NOTE : "", DATA_NOTE].filter(Boolean).join("\n");
+    const notes = [result.degraded && !result.limited ? DEGRADED_NOTE : "", DATA_NOTE].filter(Boolean).join("\n");
     return {
       text: list ? `${result.text}\n\n${list}\n\n${notes}` : result.text,
       links: [],

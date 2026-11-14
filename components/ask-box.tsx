@@ -11,7 +11,7 @@ import { quickLabel, setBaOverrides, type DictKey, type Lang } from "@/lib/i18n"
 
 type T = Record<DictKey, string>;
 /** content — что видит пользователь; send — что уходит помощнику (быстрые ответы на башкирском отправляются по-русски). */
-type Msg = { role: "user" | "assistant"; content: string; send?: string; events?: CardEvent[]; suggestions?: string[]; error?: boolean; degraded?: boolean; ageNote?: boolean; why?: Record<string, string[]>; askLocation?: boolean };
+type Msg = { role: "user" | "assistant"; content: string; send?: string; events?: CardEvent[]; suggestions?: string[]; error?: boolean; degraded?: boolean; limited?: boolean; ageNote?: boolean; why?: Record<string, string[]>; askLocation?: boolean };
 
 /** Этапы ожидания: запросы к ИИ идут по очереди, поэтому при наплыве ответ может занять до минуты. */
 const STAGES: [number, DictKey][] = [
@@ -167,7 +167,7 @@ export function AskBox({
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? t.aiFailed);
-      setMessages([...next, { role: "assistant", content: data.text, events: groupSessions((data.events ?? []).map(toCard)), suggestions: data.suggestions ?? [], degraded: !!data.degraded, ageNote: data.filter?.age != null, why: data.why, askLocation: !!data.askLocation }]);
+      setMessages([...next, { role: "assistant", content: data.text, events: groupSessions((data.events ?? []).map(toCard)), suggestions: data.suggestions ?? [], degraded: !!data.degraded, limited: !!data.limited, ageNote: data.filter?.age != null, why: data.why, askLocation: !!data.askLocation }]);
     } catch (e) {
       setMessages([...next, { role: "assistant", content: e instanceof Error ? e.message : t.netError, error: true }]);
     } finally {
@@ -289,7 +289,8 @@ export function AskBox({
                   {m.content}
                 </p>
               </div>
-              {m.degraded && (
+              {/* Лимит расходов на ИИ — служебное дело администратора: пользователю плашку не показываем */}
+              {m.degraded && !m.limited && (
                 <p className="text-xs text-amber-800 sm:ml-10" role="note">
                   {t.degradedNote}
                 </p>

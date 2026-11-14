@@ -204,6 +204,7 @@ export type AgentReply = {
   /** Почему событие в подборке: по каждому id — «✓ сб, 15 ноября», «✓ от 500 ₽ (≤ 1000 ₽)», «✗ другой город». Формирует код. */
   why?: Record<string, string[]>;
   degraded?: boolean; // часть ответа без ИИ (перегрузка, сбой или лимит стоимости)
+  limited?: boolean; // без ИИ из-за лимита расходов (на диалог или на пользователя в сутки), а не сбоя
   /** «Рядом со мной» без местоположения: клиент показывает кнопку «📍 Показать, где я» и повторяет запрос с location. */
   askLocation?: boolean;
   traceId?: string; // трасса ответа в админке: /admin/traces/{traceId}
@@ -243,6 +244,7 @@ export async function runAgent(history: ChatMessage[], { lang = "ru", source, us
   const { result: reply, calls } = await withAiUsage(() => agentCore(history, lang, { noAi: !!limit, steps, dialogKey, botUserId, source, location }));
   const tokens = calls.reduce((n, c) => n + c.tokens, 0);
   const ok = calls.filter((c) => !c.error).length;
+  if (limit) reply.limited = true;
   const mode = limit ? "limit" : !reply.degraded ? "ai" : ok ? "mixed" : "rules";
   if (!source) return reply;
   const traceId = randomUUID();
@@ -852,7 +854,11 @@ function priceExplanation(items: EventItem[], sort: "price_desc" | "price_asc", 
 
 /** Объяснение без ИИ: что учтено и что ближе всего. */
 function templateExplanation(items: EventItem[], f: EventFilter) {
-  const n = items.length;
+  // Считаем как карточки на сайте и в ботах (groupSessions): сеансы одного события на одной площадке — одна карточка
+  const n = new Set(items.map((e) => {
+    const multi = e.endsAt && e.endsAt.getTime() - e.startsAt.getTime() > 86_400_000;
+    return multi || e.status === "CANCELLED" || !e.venue ? e.id : [e.title.toLowerCase().replace(/ё/g, "е").replace(/\s+/g, " ").trim(), e.venue.name, e.venue.city].join("|");
+  })).size;
   const word = n % 10 === 1 && n % 100 !== 11 ? "событие" : [2, 3, 4].includes(n % 10) && ![12, 13, 14].includes(n % 100) ? "события" : "событий";
   const conditions = describeFilter(f);
   const first = items[0];
