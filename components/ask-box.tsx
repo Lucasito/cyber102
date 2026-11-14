@@ -289,8 +289,8 @@ export function AskBox({
                   {m.content}
                 </p>
               </div>
-              {/* Лимит расходов на ИИ — служебное дело администратора: пользователю плашку не показываем */}
-              {m.degraded && !m.limited && (
+              {/* Без ИИ — из-за сбоя или лимита расходов: пользователю одна и та же плашка, о лимите не сообщаем */}
+              {m.degraded && (
                 <p className="text-xs text-amber-800 sm:ml-10" role="note">
                   {t.degradedNote}
                 </p>
