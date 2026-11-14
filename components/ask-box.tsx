@@ -97,7 +97,22 @@ function ChatEvents({ events, lang, t, first, ageNote, why }: { events: CardEven
   );
 }
 
-export function AskBox({ examples, lang, t, chatEvents = 4, ba }: { examples: string[]; lang: Lang; t: T; chatEvents?: number; ba?: Record<string, string> }) {
+export function AskBox({
+  examples,
+  lang,
+  t,
+  chatEvents = 4,
+  ba,
+  initialQuestion,
+}: {
+  examples: string[];
+  lang: Lang;
+  t: T;
+  chatEvents?: number;
+  ba?: Record<string, string>;
+  /** Вопрос из виджета на другом сайте (/?ask=…) — отправляется сразу, параметр убирается из адреса */
+  initialQuestion?: string;
+}) {
   // Башкирский перевод из админки — в клиентский модуль (подписи карточек и быстрых ответов)
   if (ba) setBaOverrides(ba);
   const [input, setInput] = useState("");
@@ -111,6 +126,17 @@ export function AskBox({ examples, lang, t, chatEvents = 4, ba }: { examples: st
   useEffect(() => {
     if (started) endRef.current?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   }, [messages.length, loading, started]);
+
+  const askedInitial = useRef(false);
+  useEffect(() => {
+    if (!initialQuestion?.trim() || askedInitial.current) return;
+    askedInitial.current = true;
+    const url = new URL(window.location.href);
+    url.searchParams.delete("ask");
+    window.history.replaceState(null, "", url);
+    void ask(initialQuestion);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- один раз при открытии страницы
+  }, [initialQuestion]);
 
   /** text — что отправить помощнику; shown — как показать в чате (по умолчанию то же). */
   async function ask(text: string, shown?: string) {

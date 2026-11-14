@@ -3,7 +3,8 @@
  *   <script src="https://<домен-афиши>/widget.js" async></script>
  * Все атрибуты data-* (кроме data-height) передаются виджету как параметры: data-price-max → priceMax и т. д.
  * data-height: число пикселей или "auto" (по умолчанию) — высота подстраивается под содержимое.
- * Оформление: data-layout, data-cols, data-img="0", data-theme="dark", data-bg, data-radius, data-font, data-accent, data-title.
+ * Оформление: data-layout, data-cols, data-img="0", data-theme="dark", data-bg, data-radius, data-font, data-accent, data-title;
+ * data-ask="1" — строка вопроса помощнику (открывает чат на сайте афиши в новой вкладке).
  * Работает через iframe — не вмешивается в стили и скрипты сайта, cookies не использует. */
 (function () {
   var src = document.currentScript && document.currentScript.src;

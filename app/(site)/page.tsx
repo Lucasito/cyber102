@@ -121,6 +121,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<SP>
               t={dict(lang)}
               ba={lang === "ba" ? (await getSettings("i18n")).ba : undefined}
               chatEvents={T.chatEvents}
+              initialQuestion={typeof sp.ask === "string" ? sp.ask.slice(0, 500) : undefined}
               examples={lang === "ba" ? examplesBa() : site.examples.length ? site.examples : DEFAULT_EXAMPLES}
             />
           </div>

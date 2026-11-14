@@ -41,9 +41,10 @@ const FONTS: Record<string, string> = {
  *   font     system | serif         шрифт (по умолчанию Inter)
  *   accent   hex без #              цвет акцентов
  *   title, link=0                   заголовок, без ссылки «Вся афиша»
+ *   ask=1                           строка «Спросить помощника»: вопрос открывается в чате на сайте афиши (новая вкладка)
  */
 export default async function Widget({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
-  const { period, layout, title, accent, link, wid, cols, img, theme, bg, radius, font, ...sp } = await searchParams;
+  const { period, layout, title, accent, link, wid, cols, img, theme, bg, radius, font, ask, ...sp } = await searchParams;
   // Показы одного события сводятся в карточку — берём с запасом, чтобы карточек было сколько просили
   const limit = Math.min(Math.max(Number(sp.limit) || 6, 1), 30);
   const parsed = parseEventFilter({ ...sp, limit: String(Math.min(limit * 3, 90)), ...periodDates(period) });
@@ -79,6 +80,22 @@ export default async function Widget({ searchParams }: { searchParams: Promise<R
       <style>{css}</style>
       {wid && <HeightReporter wid={wid.slice(0, 40)} />}
       {title && <h2 className="mb-2 border-l-4 border-[var(--brand)] pl-2 text-lg font-semibold text-[var(--brand)]">{title.slice(0, 120)}</h2>}
+      {ask === "1" && (
+        // Без чата во фрейме: вопрос уходит на сайт афиши (новая вкладка) и отправляется помощнику сразу — ИИ не тратится на чужой странице
+        <form action={`${base}/`} method="get" target="_blank" className="mb-3 flex gap-2">
+          <input
+            name="ask"
+            required
+            maxLength={500}
+            placeholder="Спросить помощника: куда сходить в субботу с ребёнком?"
+            aria-label="Вопрос помощнику афиши"
+            className={`min-w-0 flex-1 rounded-2xl px-3.5 py-2 text-sm ring-1 outline-none focus:ring-2 focus:ring-[var(--brand)] ${dark ? "bg-stone-800 text-stone-100 ring-white/10 placeholder:text-stone-400" : "bg-white ring-black/10"}`}
+          />
+          <button type="submit" className="shrink-0 rounded-2xl bg-[var(--brand)] px-4 py-2 text-sm font-medium text-white hover:brightness-110">
+            Спросить
+          </button>
+        </form>
+      )}
       {items.length ? (
         <div className={list ? "grid gap-2" : "grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]"} style={gridStyle}>
           {items.map((e) => (

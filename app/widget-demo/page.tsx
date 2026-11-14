@@ -19,7 +19,7 @@ export default async function WidgetDemo({ searchParams }: { searchParams: Promi
   const { host: hostKey, ...params } = await searchParams;
   const h = HOSTS[(hostKey as keyof typeof HOSTS) in HOSTS ? (hostKey as keyof typeof HOSTS) : "light"];
   // Тёмный сайт без явной темы — тёмные карточки, иначе подписи виджета на прозрачном фоне не читаются
-  const main = Object.fromEntries(Object.entries({ limit: "6", ...(hostKey === "dark" && !params.theme ? { theme: "dark" } : {}), ...params }).map(([k, v]) => [attr(k), String(v).slice(0, 200)]));
+  const main = Object.fromEntries(Object.entries({ limit: "6", ask: "1", ...(hostKey === "dark" && !params.theme ? { theme: "dark" } : {}), ...params }).map(([k, v]) => [attr(k), String(v).slice(0, 200)]));
   const side = { "data-layout": "list", "data-img": "0", "data-limit": "4", "data-link": "0", "data-period": "week", ...(hostKey === "dark" ? { "data-theme": "dark" } : {}) };
   const query = (host: string) => new URLSearchParams({ ...params, host }).toString();
 

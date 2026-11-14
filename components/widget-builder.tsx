@@ -29,6 +29,7 @@ type State = {
   bgColor: string;
   radius: string;
   font: string;
+  ask: boolean;
 };
 
 const INITIAL: State = {
@@ -54,6 +55,7 @@ const INITIAL: State = {
   bgColor: "#ffffff",
   radius: "16",
   font: "",
+  ask: false,
 };
 const DEFAULT_ACCENT = INITIAL.accent;
 
@@ -104,6 +106,7 @@ function widgetParams(s: State): [string, string][] {
   if (s.bg === "custom") add("bg", s.bgColor.replace("#", ""));
   if (s.radius !== "16") add("radius", s.radius);
   add("font", s.font);
+  if (s.ask) add("ask", "1");
   return p;
 }
 
@@ -296,6 +299,13 @@ export function WidgetBuilder({ base, cities, categories }: { base: string; citi
         <Field label={`Скругление карточек: ${s.radius} px`}>
           <input className="w-full accent-[var(--brand)]" type="range" min={0} max={24} step={2} value={s.radius} onChange={(e) => set("radius", e.target.value)} />
         </Field>
+        <label className="flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-1" checked={s.ask} onChange={(e) => set("ask", e.target.checked)} />
+          <span>
+            Строка «Спросить помощника»
+            <span className="block text-xs text-stone-500">Вопрос откроется в чате на сайте афиши, в новой вкладке</span>
+          </span>
+        </label>
         <label className="flex items-center gap-2 text-sm">
           <input type="checkbox" checked={s.img} onChange={(e) => set("img", e.target.checked)} /> Картинки событий
         </label>
