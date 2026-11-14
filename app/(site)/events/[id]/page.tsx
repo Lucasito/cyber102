@@ -121,8 +121,14 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
       <div className="mt-4 grid gap-8 lg:grid-cols-[3fr_2fr]">
         <div className={`relative aspect-[16/10] overflow-hidden rounded-3xl ${CATEGORY_STYLE[e.category?.slug ?? ""] ?? DEFAULT_STYLE}`}>
           {e.imageUrl ? (
-            // eslint-disable-next-line @next/next/no-img-element -- внешние картинки источников
-            <img src={e.imageUrl} alt={`Афиша: ${e.title}`} className="h-full w-full object-cover" />
+            // Картинка целиком: вертикальный постер (кино, театр) в широкой рамке не обрезается — поля заполняет
+            // размытая копия той же картинки
+            <>
+              {/* eslint-disable-next-line @next/next/no-img-element -- внешние картинки источников */}
+              <img src={e.imageUrl} alt="" aria-hidden className="absolute inset-0 h-full w-full scale-110 object-cover opacity-60 blur-2xl" />
+              {/* eslint-disable-next-line @next/next/no-img-element -- внешние картинки источников */}
+              <img src={e.imageUrl} alt={`Афиша: ${e.title}`} className="relative h-full w-full object-contain" />
+            </>
           ) : (
             // eslint-disable-next-line @next/next/no-img-element -- локальная SVG-иллюстрация без растровой оптимизации
             <img src={illustrationFor(e.category?.slug)} alt="" className="h-full w-full object-cover" />

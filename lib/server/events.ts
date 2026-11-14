@@ -90,7 +90,48 @@ export function distanceKm(a: { lat: number; lon: number }, b: { lat: number; lo
 export const eventInclude = { venue: true, category: true, sources: { select: { source: true, url: true } } } as const;
 const include = eventInclude;
 
+/**
+ * Доля кино в общей выдаче (без жанра, текста и статуса). Киносеансов в афише больше, чем всех остальных событий,
+ * и они почти всегда ближайшие по времени — без этого правила «куда сходить в субботу» отвечало бы одним кино.
+ * Поэтому в общей выдаче фильм — одна карточка (ближайший сеанс), а фильмов не больше четверти первой страницы;
+ * если других событий мало, кино добирает страницу. Все сеансы — с category=cinema.
+ */
+export const CINEMA_SHARE = 0.25;
+
 export async function searchEvents(f: FilterInput) {
+  if (f.category || f.q || f.status) return searchCore(f);
+  const kino = await searchCore({ ...f, category: "cinema", offset: 0, limit: 100 });
+  if (!kino.total) return searchCore(f);
+  const seen = new Set<string>();
+  const films = kino.items.filter((e) => {
+    const key = e.normalizedTitle || e.title.toLowerCase();
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+  const restTotal = (await searchCore({ ...f, offset: 0, limit: 1 }, "cinema")).total;
+  const cap = Math.max(1, Math.round(f.limit * CINEMA_SHARE));
+  const shown = Math.min(films.length, Math.max(cap, f.limit - restTotal));
+  const total = restTotal + shown;
+  if (f.offset > 0) {
+    const rest = await searchCore({ ...f, offset: Math.max(0, f.offset - shown) }, "cinema");
+    return { ...rest, total, offset: f.offset };
+  }
+  const rest = await searchCore({ ...f, offset: 0, limit: Math.max(1, f.limit - shown) }, "cinema");
+  const key = (e: (typeof rest.items)[number]) =>
+    f.sort === "distance" ? e.distanceKm ?? Infinity
+    : f.sort === "price_asc" ? e.priceMin ?? Infinity
+    : f.sort === "price_desc" ? -(e.priceMax ?? e.priceMin ?? -Infinity)
+    : f.sort === "new" ? -e.createdAt.getTime()
+    : 0;
+  const items = [...rest.items.slice(0, f.limit - shown), ...films.slice(0, shown)]
+    // С возрастом события без возрастной пометки — в конце, как в searchCore
+    .sort((a, b) => (f.age != null ? Number(a.ageLimit == null) - Number(b.ageLimit == null) : 0) || key(a) - key(b) || a.startsAt.getTime() - b.startsAt.getTime());
+  return { items, total, limit: f.limit, offset: 0 };
+}
+
+/** Поиск по условиям; notCategory — исключить жанр (кино в общей выдаче добавляет searchEvents). */
+async function searchCore(f: FilterInput, notCategory?: string) {
   const radius = f.radius ?? (await getSettings("tuning")).radiusKm;
   // «Рядом»: сначала грубо отсекаем квадратом в БД, потом точно по расстоянию
   const box = f.near
@@ -117,6 +158,7 @@ export async function searchEvents(f: FilterInput) {
       box ? { venue: { ...box, approx: false } } : {}, // центр города вместо адреса — не «рядом»
     ],
     ...(f.category ? { category: { slug: f.category } } : {}),
+    ...(notCategory ? { NOT: { category: { is: { slug: notCategory } } } } : {}),
     ...(f.free ? { priceMin: 0 } : f.priceMax != null ? { priceMin: { lte: f.priceMax } } : {}),
     ...(f.pushkin ? { pushkinCard: true } : {}),
     ...(f.access ? { accessibility: { has: f.access } } : {}),
