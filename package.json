@@ -11,6 +11,7 @@
     "typecheck": "tsc --noEmit",
     "test:data-quality": "tsx --conditions=react-server scripts/data-quality-test.mts",
     "test:data-quality:ui": "tsx --conditions=react-server scripts/data-quality-test.mts --ui",
+    "test:cinemas": "tsx --conditions=react-server scripts/cinema-checks.mts",
     "test:visitor:browser": "tsx --conditions=react-server scripts/data-quality-test.mts --browser",
     "db:up": "docker compose up -d db",
     "db:generate": "prisma generate",

@@ -20,10 +20,36 @@ export function cachedPage(pages: PageCache, url: string, options: Parameters<ty
 }
 
 /**
+ * Перенаправления с cookie, как в браузере: некоторые сайты (кинотеатры на Premierzal) сначала ставят cookie
+ * выбранного города и перенаправляют на ту же страницу — без cookie это бесконечный цикл.
+ * Cookie живут только в пределах одного запроса и никуда не сохраняются.
+ */
+async function fetchWithCookies(start: URL, timeoutMs: number, accept: string): Promise<Response> {
+  const jar = new Map<string, string>();
+  const signal = AbortSignal.timeout(timeoutMs);
+  let target = start;
+  for (let hop = 0; hop < 10; hop++) {
+    const cookie = [...jar].map(([k, v]) => `${k}=${v}`).join("; ");
+    const res = await fetch(target, { redirect: "manual", signal, headers: { "User-Agent": UA, Accept: accept, ...(cookie ? { Cookie: cookie } : {}) } });
+    for (const line of res.headers.getSetCookie()) {
+      const [pair] = line.split(";");
+      const eq = pair.indexOf("=");
+      if (eq > 0) jar.set(pair.slice(0, eq).trim(), pair.slice(eq + 1).trim());
+    }
+    const location = res.headers.get("location");
+    if (res.status < 300 || res.status >= 400 || !location) return res;
+    const next = new URL(location, target);
+    if (next.protocol !== "http:" && next.protocol !== "https:") throw new FetchError("перенаправление на неподдерживаемый адрес");
+    target = next;
+  }
+  throw new FetchError("слишком много перенаправлений");
+}
+
+/**
  * Текст по адресу (http/https). Ответ больше 3 МБ, не 2xx или дольше timeoutMs — ошибка.
  * robots — соблюдать robots.txt сайта (сборщик); проверка ленты по просьбе владельца сайта — без него.
  */
-export async function fetchText(url: string, { timeoutMs = 20_000, accept = "*/*", robots = true } = {}): Promise<{ text: string; contentType: string; finalUrl: string }> {
+export async function fetchText(url: string, { timeoutMs = 20_000, accept = "*/*", robots = true, cookies = false } = {}): Promise<{ text: string; contentType: string; finalUrl: string }> {
   let target: URL;
   try {
     target = new URL(url);
@@ -35,7 +61,7 @@ export async function fetchText(url: string, { timeoutMs = 20_000, accept = "*/*
   if (robots && (await getSettings("collect")).respectRobots && !(await robotsAllow(target, UA))) throw new FetchError("сайт закрыл эту страницу для роботов (robots.txt)");
   let res: Response;
   try {
-    res = await fetch(target, { redirect: "follow", signal: AbortSignal.timeout(timeoutMs), headers: { "User-Agent": UA, Accept: accept } });
+    res = cookies ? await fetchWithCookies(target, timeoutMs, accept) : await fetch(target, { redirect: "follow", signal: AbortSignal.timeout(timeoutMs), headers: { "User-Agent": UA, Accept: accept } });
   } catch (e) {
     throw new FetchError(e instanceof Error && e.name === "TimeoutError" ? "сайт не ответил вовремя" : `сайт недоступен (${e instanceof Error ? e.message : e})`);
   }
