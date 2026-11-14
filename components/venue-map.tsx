@@ -28,7 +28,14 @@ export function VenueMap({ points, className = "h-80", me, config = { provider: 
     let cleanup = () => {};
     let cancelled = false;
     const run = config.provider === "yandex" && config.yandexKey ? yandexMap : config.provider === "osm" ? osmMap : openFreeMap;
-    void run(el, points, me ?? null, config.yandexKey ?? "").then((c) => {
+    // Яндекс не загрузился (лимит запросов, ключ, блокировка) — показываем OpenFreeMap, а не пустое место
+    void run(el, points, me ?? null, config.yandexKey ?? "")
+      .catch((e) => {
+        console.warn("[map] запасная карта:", e instanceof Error ? e.message : e);
+        el.replaceChildren();
+        return openFreeMap(el, points, me ?? null);
+      })
+      .then((c) => {
       if (cancelled) c();
       else cleanup = c;
     });
