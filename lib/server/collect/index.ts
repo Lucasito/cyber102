@@ -244,10 +244,22 @@ export async function runSource(sourceId: string, userLogin: string | null): Pro
 }
 
 /** Источники, которым пора собираться (по интервалу). Фоновая задача — по одному за раз. */
+/**
+ * Пора ли собирать: со временем сбора — раз в день, когда наступило это время по Уфе, а сегодня после него ещё не
+ * собирали; без него — раз в intervalHours после прошлого сбора.
+ */
+export function isDue(s: Pick<Source, "lastRunAt" | "intervalHours" | "collectAt">, now = new Date()) {
+  if (s.collectAt && /^\d{2}:\d{2}$/.test(s.collectAt)) {
+    const today = now.toLocaleDateString("sv-SE", { timeZone: "Asia/Yekaterinburg" });
+    const at = new Date(`${today}T${s.collectAt}:00+05:00`); // Уфа — UTC+5 круглый год
+    return now >= at && (!s.lastRunAt || s.lastRunAt < at);
+  }
+  return !s.lastRunAt || now.getTime() - s.lastRunAt.getTime() >= s.intervalHours * 3_600_000;
+}
+
 export async function collectDueSources(limit = 2) {
-  const now = Date.now();
   const sources = await db.source.findMany({ where: { enabled: true }, orderBy: { lastRunAt: { sort: "asc", nulls: "first" } } });
-  const due = sources.filter((s) => !s.lastRunAt || now - s.lastRunAt.getTime() >= s.intervalHours * 3_600_000).slice(0, limit);
+  const due = sources.filter((s) => isDue(s)).slice(0, limit);
   for (const s of due) await runSource(s.id, "сборщик").catch(() => undefined);
   return due.length;
 }

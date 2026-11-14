@@ -42,11 +42,14 @@ export function SourceForm({ source }: { source?: Source }) {
           </Select>
         </Field>
       )}
-      <div className="grid gap-4 sm:grid-cols-3">
+      <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Город по умолчанию" hint="Если в записи города нет">
           <Input name="city" defaultValue={source?.city ?? ""} placeholder="Уфа" />
         </Field>
-        <Field label="Собирать раз в, часов">
+        <Field label="Время сбора" hint="Каждый день в это время по Уфе; пусто — по интервалу">
+          <Input name="collectAt" type="time" defaultValue={source ? (source.collectAt ?? "") : "06:00"} />
+        </Field>
+        <Field label="Или раз в, часов" hint="Если время сбора не задано">
           <Input name="intervalHours" type="number" min={1} max={168} defaultValue={source?.intervalHours ?? 12} />
         </Field>
         <Field label="Новых записей за раз" hint="Для «RSS + ИИ» ограничивает расходы">

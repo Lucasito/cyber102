@@ -38,12 +38,12 @@ let added = 0;
 for (const s of SOURCES) {
   const exists = await db.source.findUnique({ where: { code: s.code } });
   if (exists) continue;
-  await db.source.create({ data: { ...s, kind: "rss_ai", enabled: false, intervalHours: 12, maxItems: 10, createdBy: "seed" } });
+  await db.source.create({ data: { ...s, kind: "rss_ai", enabled: false, intervalHours: 12, collectAt: "06:00", maxItems: 10, createdBy: "seed" } });
   added++;
 }
 for (const s of PAGES) {
   if (await db.source.findUnique({ where: { code: s.code } })) continue;
-  await db.source.create({ data: { ...s, enabled: false, intervalHours: s.kind === "jsonld" ? 6 : 24, maxItems: 20, createdBy: "seed" } });
+  await db.source.create({ data: { ...s, enabled: false, intervalHours: s.kind === "jsonld" ? 6 : 24, collectAt: "06:00", maxItems: 20, createdBy: "seed" } });
   added++;
 }
 console.log(`Источников добавлено: ${added} (выключены — включите в админке после проверки)`);

@@ -387,6 +387,7 @@ model Source {
   autoPublish   Boolean      @default(false) // прошедшие проверку — сразу в афишу (у rss_ai — всегда модерация)
   enabled       Boolean      @default(true)
   intervalHours Int          @default(6)
+  collectAt     String? // ежедневно в это время по Уфе («06:00»); пусто — раз в intervalHours
   maxItems      Int          @default(20) // новых записей за запуск: у rss_ai ограничивает расходы на ИИ
   note          String?
   lastRunAt     DateTime?

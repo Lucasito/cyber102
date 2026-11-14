@@ -54,6 +54,7 @@ export async function saveSource(_: ActionState, f: FormData): Promise<ActionSta
       autoPublish: kind !== "rss_ai" && kind !== "html_ai" && f.get("autoPublish") === "on",
       enabled: f.get("enabled") === "on",
       intervalHours: num(f, "intervalHours", 1, 168, 12),
+      collectAt: /^([01]\d|2[0-3]):[0-5]\d$/.test(text(f, "collectAt")) ? text(f, "collectAt") : null,
       maxItems: num(f, "maxItems", 1, 100, 20),
       note: text(f, "note").slice(0, 1000) || null,
       venueName: text(f, "venueName").slice(0, 200) || null,

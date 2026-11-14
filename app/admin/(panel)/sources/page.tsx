@@ -46,7 +46,7 @@ export default async function AdminSources() {
                   </div>
                 </div>
                 <div className="text-right text-xs">
-                  <div className={s.enabled ? "text-emerald-700" : "text-stone-400"}>{s.enabled ? `раз в ${s.intervalHours} ч` : "выключен"}</div>
+                  <div className={s.enabled ? "text-emerald-700" : "text-stone-400"}>{s.enabled ? (s.collectAt ? `ежедневно в ${s.collectAt}` : `раз в ${s.intervalHours} ч`) : "выключен"}</div>
                   <div className={s.lastStatus === "error" ? "text-red-700" : "text-stone-500"}>{when(s.lastRunAt)}</div>
                 </div>
               </li>
