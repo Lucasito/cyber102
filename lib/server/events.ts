@@ -124,7 +124,23 @@ export async function searchEvents(f: FilterInput) {
     : f.sort === "price_desc" ? -(e.priceMax ?? e.priceMin ?? -Infinity)
     : f.sort === "new" ? -e.createdAt.getTime()
     : 0;
-  const items = [...rest.items.slice(0, f.limit - shown), ...films.slice(0, shown)]
+  const others = rest.items.slice(0, f.limit - shown);
+  const picked = films.slice(0, shown);
+  if (f.sort === "date" || !f.sort) {
+    // По дате фильмы почти всегда ближайшие и собрались бы в первых рядах — равномерно вперемешку:
+    // каждая N-я карточка — фильм (по порядку сеансов), остальные — другие события по дате
+    const step = Math.max(2, Math.floor(f.limit / Math.max(1, shown)));
+    const items: typeof others = [];
+    let o = 0, k = 0;
+    while (o < others.length || k < picked.length) {
+      const filmTurn = (items.length + 1) % step === 0 || o >= others.length;
+      if (filmTurn && k < picked.length) items.push(picked[k++]);
+      else if (o < others.length) items.push(others[o++]);
+      else items.push(picked[k++]);
+    }
+    return { items, total, limit: f.limit, offset: 0 };
+  }
+  const items = [...others, ...picked]
     // С возрастом события без возрастной пометки — в конце, как в searchCore
     .sort((a, b) => (f.age != null ? Number(a.ageLimit == null) - Number(b.ageLimit == null) : 0) || key(a) - key(b) || a.startsAt.getTime() - b.startsAt.getTime());
   return { items, total, limit: f.limit, offset: 0 };
