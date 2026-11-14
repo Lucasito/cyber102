@@ -11,6 +11,24 @@ const MAX_BYTES = 3 * 1024 * 1024;
 
 export class FetchError extends Error {}
 
+/**
+ * Бережная нагрузка на чужие сайты: к одному сайту — не чаще одного запроса в HOST_INTERVAL_MS (очередь по
+ * хосту, общая для всех сборщиков процесса). Сайт ответил 429/503 — не обращаемся к нему HOST_BACKOFF_MS.
+ */
+export const HOST_INTERVAL_MS = 3_000;
+const HOST_BACKOFF_MS = 30 * 60_000;
+const nextSlot = new Map<string, number>();
+const backoffUntil = new Map<string, number>();
+async function politeSlot(host: string) {
+  if (/^(localhost|127\.0\.0\.1|\[::1\])(:\d+)?$/.test(host)) return; // свой сервер (проверки) — без пауз
+  const blocked = backoffUntil.get(host) ?? 0;
+  if (blocked > Date.now()) throw new FetchError("сайт просил снизить частоту запросов — повторим позже");
+  const now = Date.now();
+  const at = Math.max(now, nextSlot.get(host) ?? 0);
+  nextSlot.set(host, at + HOST_INTERVAL_MS);
+  if (at > now) await new Promise((ok) => setTimeout(ok, at - now));
+}
+
 export type PageCache = Map<string, Promise<Awaited<ReturnType<typeof fetchText>>>>;
 /** Повторный разбор в одном обходе использует уже загруженную страницу, включая неудачные попытки. */
 export function cachedPage(pages: PageCache, url: string, options: Parameters<typeof fetchText>[1] = { accept: "text/html" }) {
@@ -59,11 +77,17 @@ export async function fetchText(url: string, { timeoutMs = 20_000, accept = "*/*
   if (target.protocol !== "http:" && target.protocol !== "https:") throw new FetchError("поддерживаются только ссылки http(s)");
   // Соблюдение robots.txt включается в админке («Источники»)
   if (robots && (await getSettings("collect")).respectRobots && !(await robotsAllow(target, UA))) throw new FetchError("сайт закрыл эту страницу для роботов (robots.txt)");
+  await politeSlot(target.host);
   let res: Response;
   try {
     res = cookies ? await fetchWithCookies(target, timeoutMs, accept) : await fetch(target, { redirect: "follow", signal: AbortSignal.timeout(timeoutMs), headers: { "User-Agent": UA, Accept: accept } });
   } catch (e) {
     throw new FetchError(e instanceof Error && e.name === "TimeoutError" ? "сайт не ответил вовремя" : `сайт недоступен (${e instanceof Error ? e.message : e})`);
+  }
+  if (res.status === 429 || res.status === 503) {
+    // Сайт перегружен или просит реже: Retry-After в секундах, иначе — полчаса
+    const after = Number(res.headers.get("retry-after"));
+    backoffUntil.set(target.host, Date.now() + (after > 0 && after < 86_400 ? after * 1000 : HOST_BACKOFF_MS));
   }
   if (!res.ok) throw new FetchError(`сайт ответил кодом ${res.status}`);
   const len = Number(res.headers.get("content-length") ?? 0);

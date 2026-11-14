@@ -6,6 +6,9 @@ import { decodeEntities, fetchText } from "./fetch";
 // или в данных страницы. Один сеанс — одна строка импорта с постоянным externalId: перенос времени обновляет
 // событие, а не создаёт новое. Площадку и город подставляет источник (venueName, city).
 // Ссылка на источник — страница расписания или фильма на официальном сайте: на ней видно этот сеанс.
+// Нагрузка на сайты: сбор раз в сутки, запросы по одному с паузой 3 с к одному сайту (fetchText), при ошибке обход
+// сайта прекращается до следующего запуска. Сайт с расписанием на главной — 1 запрос; по дням — до 5; «Синема 5» —
+// главная и страницы фильмов (до 40).
 
 type Row = Record<string, unknown>;
 
@@ -108,19 +111,20 @@ export function sessionRows(prefix: string, sessions: Session[], now = new Date(
   return rows;
 }
 
-/** Загрузить страницы по дням; день с ошибкой пропускается, если хоть один удался. */
+/**
+ * Загрузить страницы по дням, по одной (паузы между запросами — в fetchText). Первая ошибка останавливает обход
+ * сайта в этом запуске: не долбим сайт, который не отвечает; уже загруженные дни сохраняются.
+ */
 async function perDay<T>(days: string[], load: (day: string) => Promise<T[]>): Promise<T[]> {
   const out: T[] = [];
-  let failed: unknown = null, ok = 0;
-  for (const day of days) {
+  for (const [i, day] of days.entries()) {
     try {
       out.push(...(await load(day)));
-      ok++;
     } catch (e) {
-      failed = e;
+      if (!i) throw e;
+      break;
     }
   }
-  if (!ok && failed) throw failed;
   return out;
 }
 
@@ -435,14 +439,19 @@ async function runCinema5(url: string) {
   const links = [...new Set([...text.matchAll(/href="(\/[a-z-]+\/movie\/[^"?#]+)"/g)].map((m) => m[1]).filter((h) => h.startsWith(`${prefix}/movie/`)))].slice(0, 40);
   if (!links.length) throw new Error("на странице нет ссылок на фильмы");
   const sessions: Session[] = [];
-  let ok = 0;
+  let ok = 0, errors = 0;
   for (const href of links) {
     const page = abs(href, finalUrl);
     try {
       const { text: movie } = await fetchText(page, { accept: "text/html" });
       sessions.push(...parseCinema5Movie(movie, page));
       ok++;
-    } catch { /* фильм без страницы — пропускаем */ }
+    } catch {
+      // Фильм без страницы — пропускаем; две ошибки подряд — сайт не в порядке, до следующего запуска не трогаем
+      if (++errors >= 2) break;
+      continue;
+    }
+    errors = 0;
   }
   if (!ok) throw new Error("страницы фильмов не загрузились");
   return sessionRows(`cinemabox:${new URL(finalUrl).hostname}${prefix}`, sessions);
