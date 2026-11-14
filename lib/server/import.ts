@@ -412,7 +412,12 @@ export async function importRows(rows: Record<string, unknown>[], opts: ImportOp
         if (existing && (opts.review || (opts.verifyLinks && existing.publication === "PUBLISHED"))) {
           const proposed = Object.fromEntries(EVENT_FIELDS.filter((k) => data[k] !== undefined).map((k) => [k, data[k]]));
           const change = await queueDataChange(tx, { entity: "event", entityId: existing.id, source, url: n.sourceUrl, current: existing, proposed });
-          if (own) await tx.eventSource.updateMany({ where: { eventId: existing.id, source, url: n.sourceUrl }, data: { fetchedAt: new Date() } });
+          if (own) {
+            // Ссылка на первоисточник — не содержание карточки: если источник теперь даёт другую страницу для того же
+            // сеанса (тот же externalId), ссылка обновляется сразу, без проверки
+            if (n.externalId && !(await tx.eventSource.count({ where: { eventId: existing.id, source, url: n.sourceUrl } }))) await tx.eventSource.updateMany({ where: { eventId: existing.id, source, externalId: n.externalId }, data: { url: n.sourceUrl } });
+            await tx.eventSource.updateMany({ where: { eventId: existing.id, source, url: n.sourceUrl }, data: { fetchedAt: new Date() } });
+          }
           await tx.rawRecord.upsert({ where: { source_hash: { source, hash } },
             create: { source, sourceType, hash, payload: raw as Prisma.InputJsonValue, importId: run.id, eventId: existing.id },
             update: { importId: run.id, eventId: existing.id, error: null },
@@ -460,7 +465,10 @@ export async function importRows(rows: Record<string, unknown>[], opts: ImportOp
           } else outcome = "unchanged";
         }
         // Источник события. Одна ссылка может относиться к нескольким сеансам (страница постановки) — связь своя у каждого
-        const link = await tx.eventSource.findFirst({ where: { eventId, source, url: n.sourceUrl } });
+        let link = await tx.eventSource.findFirst({ where: { eventId, source, url: n.sourceUrl } });
+        // Тот же сеанс источника (externalId) с прежней страницей — переносим ссылку, а не заводим вторую
+        if (!link && n.externalId) link = await tx.eventSource.findFirst({ where: { eventId, source, externalId: n.externalId } });
+        if (link && link.url !== n.sourceUrl) link = await tx.eventSource.update({ where: { id: link.id }, data: { url: n.sourceUrl } });
         if (!link) await tx.eventSource.create({ data: { eventId, source, sourceType, url: n.sourceUrl, externalId: n.externalId, sourceHash: hash } });
         else await tx.eventSource.update({ where: { id: link.id }, data: { sourceHash: hash, externalId: n.externalId ?? link.externalId, fetchedAt: new Date() } });
         await tx.rawRecord.upsert({
