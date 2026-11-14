@@ -11,7 +11,7 @@ import { quickLabel, setBaOverrides, type DictKey, type Lang } from "@/lib/i18n"
 
 type T = Record<DictKey, string>;
 /** content — что видит пользователь; send — что уходит помощнику (быстрые ответы на башкирском отправляются по-русски). */
-type Msg = { role: "user" | "assistant"; content: string; send?: string; events?: CardEvent[]; suggestions?: string[]; error?: boolean; degraded?: boolean; ageNote?: boolean; why?: Record<string, string[]> };
+type Msg = { role: "user" | "assistant"; content: string; send?: string; events?: CardEvent[]; suggestions?: string[]; error?: boolean; degraded?: boolean; ageNote?: boolean; why?: Record<string, string[]>; askLocation?: boolean };
 
 /** Этапы ожидания: запросы к ИИ идут по очереди, поэтому при наплыве ответ может занять до минуты. */
 const STAGES: [number, DictKey][] = [
@@ -118,8 +118,16 @@ export function AskBox({ examples, lang, t, chatEvents = 4, ba }: { examples: st
     if (!q || loading) return;
     if (/^новый поиск$/i.test(q)) return reset();
     const next: Msg[] = [...messages, { role: "user", content: shown ?? q, send: q }];
-    setMessages(next);
     setInput("");
+    await request(next);
+  }
+
+  /**
+   * Запрос к помощнику по истории next. location — для «рядом со мной»: координаты с согласия человека (браузер
+   * спрашивает разрешение) или "denied"; уходят только в этот запрос и нигде на сайте не сохраняются.
+   */
+  async function request(next: Msg[], location?: { lat: number; lon: number } | "denied") {
+    setMessages(next);
     setLoading(true);
     try {
       const history = next
@@ -129,17 +137,29 @@ export function AskBox({ examples, lang, t, chatEvents = 4, ba }: { examples: st
       const res = await fetch("/api/ai/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json", "X-Afisha-Client": "site" },
-        body: JSON.stringify({ messages: history, lang }),
+        body: JSON.stringify({ messages: history, lang, ...(location ? { location } : {}) }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.message ?? t.aiFailed);
-      setMessages([...next, { role: "assistant", content: data.text, events: groupSessions((data.events ?? []).map(toCard)), suggestions: data.suggestions ?? [], degraded: !!data.degraded, ageNote: data.filter?.age != null, why: data.why }]);
+      setMessages([...next, { role: "assistant", content: data.text, events: groupSessions((data.events ?? []).map(toCard)), suggestions: data.suggestions ?? [], degraded: !!data.degraded, ageNote: data.filter?.age != null, why: data.why, askLocation: !!data.askLocation }]);
     } catch (e) {
       setMessages([...next, { role: "assistant", content: e instanceof Error ? e.message : t.netError, error: true }]);
     } finally {
       setLoading(false);
       inputRef.current?.focus({ preventScroll: true });
     }
+  }
+
+  /** «Рядом со мной»: повторяем тот же запрос (без вопроса о местоположении) — с координатами или без них. */
+  function answerLocation(share: boolean) {
+    const base = messages.at(-1)?.askLocation ? messages.slice(0, -1) : messages;
+    if (!share || !navigator.geolocation) return void request(base, "denied");
+    setLoading(true);
+    navigator.geolocation.getCurrentPosition(
+      (p) => void request(base, { lat: p.coords.latitude, lon: p.coords.longitude }),
+      () => void request(base, "denied"),
+      { enableHighAccuracy: false, timeout: 10_000, maximumAge: 300_000 },
+    );
   }
 
   function reset() {
@@ -241,7 +261,17 @@ export function AskBox({ examples, lang, t, chatEvents = 4, ba }: { examples: st
                 </p>
               )}
               {!!m.events?.length && <ChatEvents events={m.events} lang={lang} t={t} first={chatEvents} ageNote={m.ageNote} why={m.why} />}
-              {i === lastAssistant && !loading && (
+              {i === lastAssistant && !loading && m.askLocation && (
+                <div className="flex flex-wrap gap-2 sm:ml-10">
+                  <button type="button" onClick={() => answerLocation(true)} className="rounded-full bg-[var(--brand)] px-4 py-1.5 text-sm font-medium text-white hover:brightness-110">
+                    {t.locateMe}
+                  </button>
+                  <button type="button" onClick={() => answerLocation(false)} className="rounded-full bg-white px-4 py-1.5 text-sm ring-1 ring-black/10 hover:ring-black/30">
+                    {t.noLocation}
+                  </button>
+                </div>
+              )}
+              {i === lastAssistant && !loading && !m.askLocation && (
                 <div className="sm:ml-10">
                   <QuickReplies
                     lang={lang}

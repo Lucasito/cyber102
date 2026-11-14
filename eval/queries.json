@@ -1070,6 +1070,50 @@
       "mustInclude": [
         "можно"
       ]
+    },
+    {
+      "id": "near-ask-location",
+      "type": "simple",
+      "dialog": [
+        "Что интересного рядом со мной?"
+      ],
+      "askLocation": true
+    },
+    {
+      "id": "near-with-location",
+      "type": "simple",
+      "dialog": [
+        "Концерты рядом со мной"
+      ],
+      "location": {
+        "lat": 54.7355,
+        "lon": 55.9587
+      },
+      "askLocation": false,
+      "near": true
+    },
+    {
+      "id": "near-denied",
+      "type": "simple",
+      "dialog": [
+        "Куда сходить поблизости на выходных?"
+      ],
+      "location": "denied",
+      "askLocation": false,
+      "mustInclude": [
+        "без местоположения"
+      ]
+    },
+    {
+      "id": "price-most-expensive",
+      "type": "simple",
+      "dialog": [
+        "Покажи самое дорогое в Уфе"
+      ],
+      "constraints": {
+        "city": "Уфа"
+      },
+      "sortedDesc": true
     }
   ]
 }

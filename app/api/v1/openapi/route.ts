@@ -172,13 +172,25 @@ export function GET(request: Request) {
             content: {
               "application/json": {
                 example: { messages: [{ role: "user", content: "куда пойти в субботу с ребёнком до 1000 рублей" }] },
+                schema: {
+                  type: "object",
+                  required: ["messages"],
+                  properties: {
+                    messages: { type: "array", maxItems: 20, items: { type: "object", properties: { role: { enum: ["user", "assistant"] }, content: { type: "string", maxLength: 2000 } } } },
+                    lang: { enum: ["ru", "ba"] },
+                    location: {
+                      description: "«Рядом со мной»: местоположение с согласия человека или \"denied\" — после ответа askLocation: true; не сохраняется",
+                      oneOf: [{ type: "object", properties: { lat: { type: "number" }, lon: { type: "number" } }, required: ["lat", "lon"] }, { const: "denied" }],
+                    },
+                  },
+                },
               },
             },
           },
           responses: {
             "200": {
               description:
-                "{ text, events, filter?, suggestions, clarify?, relaxed?, why?, degraded?, traceId? } — уточняющий вопрос или подборка с объяснением. why — по id события список условий запроса: «✓ …» выполнено, «✗ …» снято при ослаблении, «? …» неизвестно. degraded: true — ИИ недоступен или исчерпан лимит стоимости, ответ собран обычным поиском (резервный режим). traceId — трасса ответа для разбора в админке",
+                "{ text, events, filter?, suggestions, clarify?, relaxed?, why?, askLocation?, degraded?, traceId? } — уточняющий вопрос или подборка с объяснением. why — по id события список условий запроса: «✓ …» выполнено, «✗ …» снято при ослаблении, «? …» неизвестно. degraded: true — ИИ недоступен или исчерпан лимит стоимости, ответ собран обычным поиском (резервный режим). traceId — трасса ответа для разбора в админке",
             },
             "400": err("Неверное тело запроса", { code: "bad_request", message: "Неверное тело запроса: нужен { messages: [{ role, content }] }" }),
             "429": err("Слишком много запросов (заголовок Retry-After)", {

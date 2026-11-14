@@ -11,6 +11,8 @@ export const OPTIONS = preflight;
 const bodySchema = z.object({
   messages: z.array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(2000) })).min(1).max(20),
   lang: z.enum(["ru", "ba"]).optional(),
+  // «Рядом со мной» — местоположение с согласия человека или отказ; только для этого запроса, не сохраняется
+  location: z.union([z.object({ lat: z.number().min(-90).max(90), lon: z.number().min(-180).max(180) }), z.literal("denied")]).optional(),
 });
 
 /** POST /api/ai/chat — ИИ-агент: свободный запрос → уточнение или подборка с объяснением. */
@@ -31,6 +33,7 @@ export const POST = apiRoute("POST /api/ai/chat", async (request) => {
   try {
     const reply = await runAgent(body.data.messages, {
       lang: body.data.lang,
+      location: body.data.location,
       source: request.headers.get("x-afisha-client") === "site" ? "site" : "api",
       userKey: `ip:${clientIp(request)}`,
     });

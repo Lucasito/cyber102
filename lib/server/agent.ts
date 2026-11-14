@@ -107,6 +107,10 @@ const PHRASES = {
     cancelled: "Хорошо, ничего не меняю.",
     confirmButtons: ["Подтвердить", "Отмена"],
     offtopic: "С этим не помогу — я подбираю только события из афиши культуры Башкортостана.",
+    askLocation:
+      "Чтобы подобрать события рядом, нужно ваше местоположение. Нажмите «📍 Показать, где я» — устройство спросит разрешение; координаты нужны только для этого поиска и не сохраняются. Или напишите город или район.",
+    nearDenied: "Без местоположения ищу по всей афише.",
+    nearMe: "Рядом с вами",
     why: { otherDates: "не в выбранные даты", otherCity: "другой город", otherGenre: "другой жанр", free: "бесплатно", ageUnknown: "возраст не указан", pushkin: "Пушкинская карта", wheelchair: "доступно на коляске", hearing: "для слабослышащих", vision: "для слабовидящих", period: "идёт в эти дни" },
     reply: "Обращайся на «вы».",
   },
@@ -127,6 +131,10 @@ const PHRASES = {
     cancelled: "Яҡшы, бер нәмә лә үҙгәртмәйем.",
     confirmButtons: ["Подтвердить", "Отмена"],
     offtopic: "Был яғынан ярҙам итә алмайым — мин Башҡортостан мәҙәниәте афишаһынан саралар ғына һайлайым.",
+    askLocation:
+      "Янығыҙҙағы сараларҙы һайлау өсөн урынығыҙ кәрәк. «📍 Ҡайҙа икәнемде күрһәт» төймәһенә баҫығыҙ — ҡоролма рөхсәт һорар; координаталар был эҙләү өсөн генә кәрәк һәм һаҡланмай. Йәки ҡаланы йәки районды яҙығыҙ.",
+    nearDenied: "Урынһыҙ бөтә афиша буйынса эҙләйем.",
+    nearMe: "Янығыҙҙа",
     why: { otherDates: "һайланған көндәрҙә түгел", otherCity: "башҡа ҡала", otherGenre: "башҡа жанр", free: "түләүһеҙ", ageUnknown: "йәше күрһәтелмәгән", pushkin: "Пушкин картаһы", wheelchair: "коляскала барырға мөмкин", hearing: "ишетеүе насарҙар өсөн", vision: "күреүе насарҙар өсөн", period: "был көндәрҙә бара" },
     reply: "Яуапты башҡорт телендә яҙ, «һеҙ» тип мөрәжәғәт ит. Сараларҙың исемдәрен һәм урындарын үҙгәртмә.",
   },
@@ -188,6 +196,8 @@ export type AgentReply = {
   /** Почему событие в подборке: по каждому id — «✓ сб, 15 ноября», «✓ от 500 ₽ (≤ 1000 ₽)», «✗ другой город». Формирует код. */
   why?: Record<string, string[]>;
   degraded?: boolean; // часть ответа без ИИ (перегрузка, сбой или лимит стоимости)
+  /** «Рядом со мной» без местоположения: клиент показывает кнопку «📍 Показать, где я» и повторяет запрос с location. */
+  askLocation?: boolean;
   traceId?: string; // трасса ответа в админке: /admin/traces/{traceId}
 };
 
@@ -202,13 +212,18 @@ type RunOptions = {
   userKey?: string;
   /** Пользователь бота — для подписки через агента. */
   botUserId?: string;
+  /**
+   * Местоположение для «рядом со мной» — только с согласия (кнопка геолокации); "denied" — человек отказался.
+   * Используется в одном поиске: в трассу, фильтр и диалог координаты не попадают.
+   */
+  location?: { lat: number; lon: number } | "denied";
 };
 
 /**
  * Ответ агента с трассой (ТЗ 7.4) и лимитами стоимости. Перед ответом сверяем расходы пользователя за сутки и
  * текущего диалога с лимитами из админки; превышены — отвечаем без ИИ (правила + шаблон), как при сбое.
  */
-export async function runAgent(history: ChatMessage[], { lang = "ru", source, userKey, botUserId }: RunOptions = {}): Promise<AgentReply> {
+export async function runAgent(history: ChatMessage[], { lang = "ru", source, userKey, botUserId, location }: RunOptions = {}): Promise<AgentReply> {
   const started = Date.now();
   const first = history.find((m) => m.role === "user")?.content ?? "";
   const dialogKey = userKey ? createHash("sha1").update(`${userKey}\n${first}`).digest("hex").slice(0, 16) : undefined;
@@ -217,7 +232,7 @@ export async function runAgent(history: ChatMessage[], { lang = "ru", source, us
   const limit = userHash ? await costLimitHit(userHash, dialogKey!) : null;
   const steps: TraceStep[] = limit ? [{ step: "limit", reason: limit }] : [];
 
-  const { result: reply, calls } = await withAiUsage(() => agentCore(history, lang, { noAi: !!limit, steps, dialogKey, botUserId, source }));
+  const { result: reply, calls } = await withAiUsage(() => agentCore(history, lang, { noAi: !!limit, steps, dialogKey, botUserId, source, location }));
   const tokens = calls.reduce((n, c) => n + c.tokens, 0);
   const ok = calls.filter((c) => !c.error).length;
   const mode = limit ? "limit" : !reply.degraded ? "ai" : ok ? "mixed" : "rules";
@@ -254,7 +269,14 @@ const SPECIFIC_KEYS = ["q", "category", "dateFrom", "dateTo", "priceMax", "free"
 async function agentCore(
   history: ChatMessage[],
   lang: Lang,
-  { noAi, steps, dialogKey, botUserId, source }: { noAi: boolean; steps: TraceStep[]; dialogKey?: string; botUserId?: string; source?: QuerySource },
+  {
+    noAi,
+    steps,
+    dialogKey,
+    botUserId,
+    source,
+    location,
+  }: { noAi: boolean; steps: TraceStep[]; dialogKey?: string; botUserId?: string; source?: QuerySource; location?: RunOptions["location"] },
 ): Promise<AgentReply> {
   if (lang === "ba") await loadBaOverrides();
   const P = phrasesFor(lang);
@@ -270,12 +292,16 @@ async function agentCore(
   // Инструменты (ТЗ 7.2): каждый вызов — шаг трассы с аргументами и результатом; не больше MAX_TOOL_CALLS за ответ
   const ctx: ToolContext = { botUserId, source: source === "max" || source === "telegram" ? "bot" : source === "eval" ? "eval" : source === "api" ? "api" : "site" };
   let toolCalls = 0;
+  const userNear = location && location !== "denied" ? `${location.lat.toFixed(5)},${location.lon.toFixed(5)}` : null;
   const call = async (name: ToolName, args: Record<string, unknown>, extra: Record<string, unknown> = {}, opts: { exclude?: Set<string>; confirmed?: boolean } = {}) => {
     toolCalls++;
     const t = Date.now();
     const r = await runTool(name, args, { ...ctx, confirmed: opts.confirmed }, { limit: T.agentEvents, exclude: opts.exclude });
     const pending = r.ok && r.data.needsConfirmation === true;
-    steps.push({ step: "tool", name, args: JSON.parse(JSON.stringify(args)), ok: r.ok, ms: Date.now() - t, ...(r.ok ? { result: r.data } : { error: r.error }), ...(pending ? { pending: true } : {}), ...extra });
+    // Координаты человека в трассу не пишем — только пометку
+    const logged = JSON.parse(JSON.stringify(args));
+    if (userNear && logged.near === userNear) logged.near = "местоположение пользователя";
+    steps.push({ step: "tool", name, args: logged, ok: r.ok, ms: Date.now() - t, ...(r.ok ? { result: r.data } : { error: r.error }), ...(pending ? { pending: true } : {}), ...extra });
     return r;
   };
 
@@ -341,6 +367,20 @@ async function agentCore(
   }
   // Инструмент: правила (подписка, обращение, расписание площадки, «похожее на …») главнее выбора модели
   // Уточнение к прошлой подборке («похожее, но ближе») — это поиск с прежними условиями, а не другой инструмент
+  // «Рядом со мной»: с согласия — поиск вокруг человека; без местоположения — просим кнопкой; отказ — по всей афише
+  let nearNote = "";
+  if (NEAR_ME_RE.test(last.toLowerCase().replace(/ё/g, "е")) && !PLAN_NEAR_RE.test(last.toLowerCase())) {
+    if (userNear) {
+      Object.assign(merged, { near: userNear, radius: T.radiusKm, sort: "distance" });
+      steps.push({ step: "near_me", location: "дано с согласия", radiusKm: T.radiusKm });
+    } else if (location === "denied") {
+      nearNote = P.nearDenied;
+      steps.push({ step: "near_me", location: "отказ" });
+    } else {
+      steps.push({ step: "near_me", location: "запрошено" });
+      return { text: P.askLocation, events: [], suggestions: [], clarify: true, askLocation: true };
+    }
+  }
   const tool = follow ? ({ name: "search_events", args: {}, by: "rules" } as const) : chooseTool(last, intent, merged);
   if (tool.name === "subscribe" || tool.name === "save_feedback") {
     const r = await call(tool.name, tool.args, { by: tool.by });
@@ -356,7 +396,8 @@ async function agentCore(
     const r = await call("get_event", tool.args, { by: tool.by });
     return eventReply(r, title, P, followupSuggestions, false);
   }
-  const specific = tool.name !== "search_events" || SPECIFIC_KEYS.some((k) => merged[k] != null && merged[k] !== "");
+  const priceSort = merged.sort === "price_desc" || merged.sort === "price_asc";
+  const specific = tool.name !== "search_events" || priceSort || !!userNear || SPECIFIC_KEYS.some((k) => merged[k] != null && merged[k] !== "");
   // Условия, найденные кодом (правила, прошлая подборка), — без догадок модели
   const byCode = { ...(follow?.set ?? {}), ...rules } as Record<string, unknown>;
   const specificByCode = tool.name !== "search_events" || SPECIFIC_KEYS.some((k) => byCode[k] != null && byCode[k] !== "");
@@ -424,11 +465,19 @@ async function agentCore(
       return { text, events: [], filter, suggestions: ["Новый поиск"] };
     }
   }
-  // Идущие давно (выставки) — после событий, которые начинаются в выбранный период
-  const periodStart = current.dateFrom ?? now;
-  items = [...items.filter((e) => e.startsAt >= periodStart), ...items.filter((e) => e.startsAt < periodStart)];
+  if (current.sort === "price_desc" || current.sort === "price_asc") {
+    // По цене: «от 1500 ₽» без верхней границы сравниваем по нижней; без цены — в конце
+    const top = (e: EventItem) => e.priceMax ?? e.priceMin;
+    const dir = current.sort === "price_desc" ? -1 : 1;
+    const key = (e: EventItem) => (current.sort === "price_desc" ? top(e) : e.priceMin);
+    items = [...items].sort((a, b) => (key(a) == null ? 1 : key(b) == null ? -1 : dir * (key(a)! - key(b)!)));
+  } else {
+    // Идущие давно (выставки) — после событий, которые начинаются в выбранный период
+    const periodStart = current.dateFrom ?? now;
+    items = [...items.filter((e) => e.startsAt >= periodStart), ...items.filter((e) => e.startsAt < periodStart)];
+  }
   // С возрастом зрителя события без возрастной пометки — в конце: возраст неизвестен, уточнить у организатора
-  if (current.age != null) items = [...items.filter((e) => e.ageLimit != null), ...items.filter((e) => e.ageLimit == null)];
+  if (current.age != null && !priceSort) items = [...items.filter((e) => e.ageLimit != null), ...items.filter((e) => e.ageLimit == null)];
 
   // Почему событие в подборке — по запрошенным условиям (до ослабления), чтобы несовпадение было видно честно
   const why = Object.fromEntries(items.map((e) => [e.id, matchReasons(e, filter, P.why)]));
@@ -437,12 +486,13 @@ async function agentCore(
       (e, i) =>
         `${i + 1}. ${safe(e.title)} — ${when(e)} — ${safe(e.venue?.name, 80)}, ${safe(e.venue?.city, 40)} — ` +
         `${e.priceMin === 0 ? "бесплатно" : e.priceMin != null ? `от ${e.priceMin} ₽` : "цена не указана"} — ${e.ageLimit != null ? `${e.ageLimit}+` : "возраст не указан"}` +
+        (e.distanceKm != null ? ` — ${e.distanceKm < 1 ? "меньше 1 км" : `${Math.round(e.distanceKm)} км`} от пользователя` : "") +
         (why[e.id].length ? ` — условия: ${why[e.id].join(", ")}` : ""),
     )
     .join("\n");
   const extra = (await getSettings("ai")).extraPrompt;
   // Честно говорим, какое условие пришлось снять: «На эти даты ничего не нашлось — вот ближайшее.»
-  const note = relaxed.length ? `${P.relaxed[relaxed[0]]} ${P.relaxedTail}` : "";
+  const note = [nearNote, relaxed.length ? `${relaxed[0] === "near" && userNear ? P.nearMe : P.relaxed[relaxed[0]]} ${P.relaxedTail}` : ""].filter(Boolean).join(" ");
   t0 = Date.now();
   const explain = () => chat(
     [
@@ -515,6 +565,9 @@ const CANCEL = /^(нет|отмена|отменить|не надо|не нуж
 const SUBSCRIBE_RE = /подпиш|подписк|присылай|уведомл|сообща\S* о новых|получать (новые|о новых)/;
 const FEEDBACK_RE = /передай\S* организатор|передай\S* модератор|сообщи\S* об ошибке|ошибк\S* в (карточке|афише|описании|событии)|пожалова|(неверн|неправильн)\S* (цен|врем|дат|адрес)/;
 const SCHEDULE_RE = /расписани|что (идет|будет|проходит|покажут|дают) (в|на) /;
+/** «Рядом со мной», «около меня», «поблизости» — поиск вокруг человека (местоположение — только с согласия). */
+const NEAR_ME_RE = /рядом( со мной|$|[?!.,])|около меня|возле меня|поблизости|неподалеку|недалеко от меня|ближе ко мне|рядом с (домом|работой)|в шаговой/;
+const PLAN_NEAR_RE = /рядом друг с другом|недалеко друг от друга/;
 /** Явно посторонние темы: на них — короткий отказ и возврат к афише. */
 const OFFTOPIC_RE =
   /погод|курс (доллар|евро|валют)|напиши (код|программ|сочинени|стих)|рецепт|анекдот|шутк|политик|выбор(ы|ах)|переведи|реши (задач|пример)|сколько будет|кто (ты|тебя создал)|ты кто|гороскоп|новости/;
@@ -663,7 +716,8 @@ function eventReply(r: ToolResult, title: string, P: Phrases, suggestions: strin
 
 const FOLLOW: [kind: string, re: RegExp][] = [
   ["cheaper", /дешевле|бюджетнее|не так дорого/],
-  ["more", /(^|\s)(а\s+)?еще(\s|[?!.,]|$)|другие варианты|что-то другое|покажи еще/],
+  // «Ещё раз» — повтор, а не «покажи другие»
+  ["more", /(^|\s)(а\s+)?еще(?!\s+раз)(\s|[?!.,]|$)|другие варианты|что-то другое|покажи еще(?!\s+раз)/],
   ["closer", /ближе|поближе|в центре/],
   ["otherDay", /в друг(ой|ие|ую) (день|дни|дату)|в другое время/],
   ["similar", /похож/],
@@ -838,6 +892,8 @@ function describeFilter(f: EventFilter) {
   if (f.q) parts.push(`по запросу «${f.q}»`);
   if (f.pushkin) parts.push("по Пушкинской карте");
   if (f.access) parts.push({ wheelchair: "доступно на коляске", hearing: "для слабослышащих", vision: "для слабовидящих" }[f.access]);
+  if (f.sort === "price_desc") parts.push("сначала самые дорогие — первое в списке самое дорогое");
+  else if (f.sort === "price_asc") parts.push("сначала самые дешёвые — первое в списке самое дешёвое");
   return parts.join(", ");
 }
 
@@ -899,5 +955,8 @@ export function ruleFilter(text: string, now = new Date(), ages = { kids: 6, tee
     const genre = GENRES.find(([re]) => re.test(t));
     if (genre) out.category = genre[1];
   }
+  // «Самое дорогое», «подороже» — по убыванию цены; «самое дешёвое» — по возрастанию
+  if (/сам\S* (дорог|престижн)|подороже|дорог\S* (концерт|спектакл|событ|билет|мероприят)/.test(t)) out.sort = "price_desc";
+  else if (/сам\S* (дешев|недорог|бюджетн)/.test(t)) out.sort = "price_asc";
   return out;
 }

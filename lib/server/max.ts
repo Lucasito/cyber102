@@ -1,7 +1,7 @@
 import "server-only";
 import http from "node:http";
 import https from "node:https";
-import { BOT_COMMANDS, botAnswer, greetingReply, touchBotUser, type BotReply } from "./bot-core";
+import { BOT_COMMANDS, botAnswer, greetingReply, NO_LOCATION, SEND_LOCATION, touchBotUser, type BotReply } from "./bot-core";
 import { registerSender } from "./jobs";
 import { ruTrustAgent } from "./ru-ca";
 import { DEFAULT_BOT_GREETING, getSettings, maxToken } from "./settings";
@@ -73,6 +73,8 @@ function keyboard(reply: BotReply) {
     .slice(0, 10) // ограничение кнопок платформы; сколько показывать — в настройках
     .map((l) => [{ type: "link", text: l.title.slice(0, 64), url: l.url }, ...(l.eventId ? [{ type: "callback", text: "🔔", payload: `/remind ${l.eventId}` }] : [])]);
   for (const a of reply.actions ?? []) rows.push([{ type: "callback", text: a.label.slice(0, 64), payload: a.command }]);
+  // «Рядом со мной»: геопозиция — только по нажатию человека
+  if (reply.askLocation) rows.push([{ type: "request_geo_location", text: SEND_LOCATION, quick: false }], [{ type: "message", text: NO_LOCATION }]);
   for (const row of reply.buttons ?? []) {
     rows.push(row.map((b) => (b.url ? { type: "link", text: b.label.slice(0, 64), url: b.url } : { type: "callback", text: b.label.slice(0, 64), payload: b.command ?? b.label })));
   }
@@ -109,7 +111,7 @@ export const maxGetMe = (token?: string) => maxRequest<{ user_id: string; name: 
 type MaxUser = { user_id: string | number; name?: string; first_name?: string };
 export type MaxUpdate =
   | { update_type: "bot_started"; user: MaxUser; payload?: string }
-  | { update_type: "message_created"; message?: { sender?: MaxUser; body?: { text?: string } } }
+  | { update_type: "message_created"; message?: { sender?: MaxUser; body?: { text?: string; attachments?: { type: string; latitude?: number; longitude?: number }[] } } }
   | { update_type: "message_callback"; callback?: { payload?: string; user?: MaxUser } }
   | { update_type: string };
 
@@ -123,9 +125,16 @@ export async function handleMaxUpdate(update: MaxUpdate) {
   }
   let sender: MaxUser | undefined;
   let text: string | undefined;
+  let location: { lat: number; lon: number } | undefined;
   if (update.update_type === "message_created" && "message" in update) {
     sender = update.message?.sender;
     text = update.message?.body?.text?.trim();
+    // Геопозиция, отправленная кнопкой: только для повторного поиска «рядом», не сохраняется
+    const geo = update.message?.body?.attachments?.find((a) => a.type === "location" && a.latitude != null && a.longitude != null);
+    if (geo) {
+      location = { lat: geo.latitude!, lon: geo.longitude! };
+      text = "📍";
+    }
   } else if (update.update_type === "message_callback" && "callback" in update) {
     // На случай кнопок-callback: текст запроса — в payload
     sender = update.callback?.user;
@@ -139,7 +148,7 @@ export async function handleMaxUpdate(update: MaxUpdate) {
   typing();
   const timer = chatId != null ? setInterval(typing, 4500) : null;
   try {
-    await sendMaxReply(userId, await botAnswer("max", userId, text, greeting));
+    await sendMaxReply(userId, await botAnswer("max", userId, text, greeting, location));
   } finally {
     if (timer) clearInterval(timer);
   }

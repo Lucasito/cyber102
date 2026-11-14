@@ -38,6 +38,10 @@ type Case = {
   tool?: string | string[]; // ожидаемый инструмент последней реплики (по умолчанию search_events; статус — get_event)
   bot?: boolean; // диалог от имени пользователя бота (подписка оформляется ему)
   plan?: { ok: boolean; persons?: number; budget?: number; count?: number }; // план дня: составлен ли и с какими условиями
+  location?: { lat: number; lon: number } | "denied"; // «рядом со мной»: местоположение (или отказ) к последней реплике
+  askLocation?: boolean; // ждём запрос местоположения кнопкой
+  near?: boolean; // подборка вокруг пользователя: у событий есть расстояние, координат нет в трассе
+  sortedDesc?: boolean; // «самое дорогое»: по убыванию цены
 };
 type DbEvent = Awaited<ReturnType<typeof loadActual>>[number];
 
@@ -226,10 +230,11 @@ for (const c of cases) {
   const history: ChatMessage[] = [];
   const replies: AgentReply[] = [];
   const latencies: number[] = [];
-  for (const msg of c.dialog) {
+  for (const [i, msg] of c.dialog.entries()) {
     history.push({ role: "user", content: msg });
     const t0 = Date.now();
-    const reply = await runAgent(history, { source: "eval", userKey: `eval:${c.id}:${now.getTime()}`, botUserId: c.bot ? evalBot.id : undefined });
+    const location = i === c.dialog.length - 1 ? c.location : undefined;
+    const reply = await runAgent(history, { source: "eval", userKey: `eval:${c.id}:${now.getTime()}`, botUserId: c.bot ? evalBot.id : undefined, location });
     latencies.push(Date.now() - t0);
     replies.push(reply);
     history.push({ role: "assistant", content: reply.text });
@@ -295,6 +300,31 @@ for (const c of cases) {
   const missing = (c.mustInclude ?? []).filter((w) => !text.includes(w.toLowerCase()));
   if (missing.length) notes.push(`в ответе нет: ${missing.join(", ")}`);
   pass &&= !missing.length;
+  if (c.askLocation != null && !!last.askLocation !== c.askLocation) {
+    pass = false;
+    notes.push(c.askLocation ? "не запрошено местоположение" : "лишний запрос местоположения");
+  }
+  if (c.near) {
+    // Вокруг пользователя: расстояние у событий (или честное ослабление), координат человека нет в трассе и фильтре
+    if (!last.relaxed && last.events.some((e) => e.distanceKm == null)) {
+      pass = false;
+      notes.push("подборка не вокруг пользователя");
+    }
+    const row = last.traceId ? await db.queryLog.findUnique({ where: { id: last.traceId }, select: { trace: true, filter: true } }) : null;
+    const loc = c.location && c.location !== "denied" ? c.location : null;
+    if (loc && row && JSON.stringify(row).includes(loc.lat.toFixed(3))) {
+      pass = false;
+      notes.push("координаты попали в трассу");
+    }
+  }
+  if (c.sortedDesc) {
+    const top = (e: { priceMin: number | null; priceMax: number | null }) => e.priceMax ?? e.priceMin ?? -1;
+    const prices = last.events.map(top);
+    if (!prices.every((p, i) => i === 0 || prices[i - 1] >= p)) {
+      pass = false;
+      notes.push("не по убыванию цены");
+    }
+  }
   if (c.type !== "injection") {
     // Запрет — к последнему ответу: в первом вопрос «сколько лет ребёнку?» законен
     const obeyed = (c.forbid ?? []).filter((f) => last.text.toLowerCase().includes(f.toLowerCase()));

@@ -23,7 +23,13 @@ export type BotReply = {
   actions?: { label: string; command: string }[];
   /** Ряды кнопок поиска кнопками: команда (callback) или ссылка. Показываются после links и actions. */
   buttons?: Button[][];
+  /** «Рядом со мной»: показать кнопку «Отправить геопозицию» (Telegram — клавиатура, MAX — request_geo_location). */
+  askLocation?: boolean;
 };
+
+/** Подпись кнопки отказа от геопозиции — нажатие приходит обычным текстом. */
+export const NO_LOCATION = "Искать без местоположения";
+export const SEND_LOCATION = "📍 Отправить геопозицию";
 
 /**
  * Команды меню (видны по «/»). query — во что превращается команда: в команду поиска кнопками
@@ -120,9 +126,22 @@ async function listReminders(botUserId: string): Promise<BotReply> {
 
 // ───────── Ответ на сообщение ─────────
 
-export async function botAnswer(platform: Platform, externalId: string, rawText: string, greeting?: string): Promise<BotReply> {
+/**
+ * location — геопозиция, которую человек сам отправил кнопкой (ответ на вопрос «рядом со мной»): повторяем его
+ * последний запрос с ней. Координаты идут только в этот поиск: в диалог и трассу не пишутся.
+ */
+export async function botAnswer(platform: Platform, externalId: string, rawText: string, greeting?: string, location?: { lat: number; lon: number }): Promise<BotReply> {
   const user = await touchBotUser(platform, externalId);
   const text = commandToQuery(rawText.trim()).slice(0, 1000);
+  const T0 = await getSettings("tuning");
+  if (location || text === NO_LOCATION) {
+    const dialog = (user.dialog as ChatMessage[] | null) ?? [];
+    const lastUser = dialog.map((m) => m.role).lastIndexOf("user");
+    const limited = await rateLimit(`bot:${platform}:${externalId}`, "user");
+    if (limited) return { text: limited.message, links: [], suggestions: [] };
+    if (lastUser < 0) return { text: "Напишите, что ищете рядом, например: «концерт рядом сегодня».", links: [], suggestions: [], buttons: MAIN_MENU };
+    return agentReply(platform, externalId, user.id, dialog.slice(0, lastUser + 1).slice(-T0.dialogMemory), location ?? "denied");
+  }
 
   // Новый поиск: забываем прежний диалог и фильтры
   if (RESET.test(text)) {
@@ -151,18 +170,24 @@ export async function botAnswer(platform: Platform, externalId: string, rawText:
 
   // Без ИИ агент работает по правилам и шаблону (резервный режим, ТЗ 7.5) — пользователю не отказываем
 
+  const history = [...((user.dialog as ChatMessage[] | null) ?? []), { role: "user" as const, content: text }].slice(-T0.dialogMemory);
+  return agentReply(platform, externalId, user.id, history);
+}
+
+/** Ответ агента в боте: подборка строками, кнопки событий и напоминаний; «рядом» без геопозиции — запрос кнопкой. */
+async function agentReply(platform: Platform, externalId: string, botUserId: string, history: ChatMessage[], location?: { lat: number; lon: number } | "denied"): Promise<BotReply> {
   const T = await getSettings("tuning");
-  const history = [...((user.dialog as ChatMessage[] | null) ?? []), { role: "user" as const, content: text }].slice(-T.dialogMemory);
   try {
-    const result = await runAgent(history, { source: platform, userKey: `${platform}:${externalId}`, botUserId: user.id });
+    const result = await runAgent(history, { source: platform, userKey: `${platform}:${externalId}`, botUserId, location });
     await db.botUser.update({
-      where: { id: user.id },
+      where: { id: botUserId },
       data: { dialog: [...history, { role: "assistant", content: result.text }].slice(-T.dialogMemory), messages: { increment: 1 } },
     });
+    if (result.askLocation) return { text: result.text, links: [], suggestions: [], askLocation: true };
     const events = result.events.slice(0, T.botEvents);
     // Под каждым событием — почему оно в подборке: «✓ сб, 15 ноября · ✓ от 500 ₽ (≤ 1000 ₽)»
     const list = events
-      .map((e, i) => eventLine(e, i + 1, result.filter?.age != null) + (result.why?.[e.id]?.length ? `\n   ${result.why[e.id].join(" · ")}` : ""))
+      .map((e, i) => eventLine(e, i + 1, result.filter?.age != null) + (e.distanceKm != null ? ` · ${e.distanceKm < 1 ? "< 1" : Math.round(e.distanceKm)} км` : "") + (result.why?.[e.id]?.length ? `\n   ${result.why[e.id].join(" · ")}` : ""))
       .join("\n\n");
     const notes = [result.degraded ? DEGRADED_NOTE : "", DATA_NOTE].filter(Boolean).join("\n");
     return {

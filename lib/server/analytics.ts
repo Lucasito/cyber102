@@ -23,7 +23,8 @@ const toJson = (v: unknown) => JSON.parse(JSON.stringify(v)) as Prisma.InputJson
 
 /** Записать запрос и трассу ответа; ошибки записи не мешают ответу пользователю. Ждём записи: следующая реплика читает трассу. */
 export async function saveTrace(id: string, source: QuerySource, text: string, reply: AgentReply, meta: TraceMeta) {
-  const filter = reply.filter ? toJson({ ...reply.filter, limit: undefined, offset: undefined }) : undefined;
+  // near не храним: это может быть местоположение человека («рядом со мной»); уточнения его не используют
+  const filter = reply.filter ? toJson({ ...reply.filter, limit: undefined, offset: undefined, near: undefined }) : undefined;
   await db.queryLog
     .create({
       data: {

@@ -1,6 +1,6 @@
 import "server-only";
 import { createHash } from "node:crypto";
-import { BOT_COMMANDS, botAnswer, type BotReply } from "./bot-core";
+import { BOT_COMMANDS, botAnswer, NO_LOCATION, SEND_LOCATION, type BotReply } from "./bot-core";
 import { registerSender } from "./jobs";
 import { telegramConfig } from "./settings";
 
@@ -20,7 +20,7 @@ type TgUser = { id: number; first_name?: string; username?: string };
 type TgChat = { id: number; type: string };
 export type TgUpdate = {
   update_id: number;
-  message?: { chat: TgChat; from?: TgUser; text?: string };
+  message?: { chat: TgChat; from?: TgUser; text?: string; location?: { latitude: number; longitude: number } };
   callback_query?: { id: string; from: TgUser; data?: string; message?: { chat: TgChat } };
 };
 const ALLOWED_UPDATES = ["message", "callback_query"];
@@ -79,6 +79,14 @@ function callbackData(text: string) {
 
 /** sendMessage с кнопками под сообщением (инлайн): ссылки, команды поиска кнопками, подсказки. */
 export function sendMessagePayload(chatId: number, reply: BotReply) {
+  // «Рядом со мной»: геопозицию можно запросить только кнопкой обычной клавиатуры (не инлайн); скрывается после нажатия
+  if (reply.askLocation) {
+    return {
+      chat_id: chatId,
+      text: reply.text.slice(0, 4000),
+      reply_markup: { keyboard: [[{ text: SEND_LOCATION, request_location: true }], [{ text: NO_LOCATION }]], one_time_keyboard: true, resize_keyboard: true },
+    };
+  }
   // Ссылка на событие и рядом «🔔» — напоминание
   const rows: unknown[][] = reply.links
     .slice(0, 10) // ограничение кнопок платформы; сколько показывать — в настройках
@@ -102,7 +110,14 @@ export async function telegramHandle(update: TgUpdate): Promise<ReturnType<typeo
   let chat: TgChat | undefined;
   let from: TgUser | undefined;
   let text: string | undefined;
-  if (m?.text) {
+  let location: { lat: number; lon: number } | undefined;
+  if (m?.location) {
+    // Геопозиция, отправленная кнопкой: только для повторного поиска «рядом», не сохраняется
+    chat = m.chat;
+    from = m.from;
+    text = "📍";
+    location = { lat: m.location.latitude, lon: m.location.longitude };
+  } else if (m?.text) {
     chat = m.chat;
     from = m.from;
     text = m.text.trim();
@@ -119,7 +134,7 @@ export async function telegramHandle(update: TgUpdate): Promise<ReturnType<typeo
   const typing = () => void tg("sendChatAction", { chat_id: chatId, action: "typing" }).catch(() => {});
   const timer = cfg.mode === "polling" ? (typing(), setInterval(typing, 4500)) : null;
   try {
-    const reply = await botAnswer("telegram", String(from?.id ?? chat.id), text, cfg.greeting);
+    const reply = await botAnswer("telegram", String(from?.id ?? chat.id), text, cfg.greeting, location);
     return sendMessagePayload(chat.id, reply);
   } finally {
     if (timer) clearInterval(timer);
