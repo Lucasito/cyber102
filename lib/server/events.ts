@@ -45,6 +45,9 @@ export const eventFilterSchema = z.object({
   age: z.coerce.number().int().min(0).max(18).optional(), // возраст зрителя: показываем события с ageLimit <= age
   pushkin: bool.optional(), // можно по Пушкинской карте
   access: z.enum(["wheelchair", "hearing", "vision"]).optional(), // доступная среда
+  lang: z.enum(["ba"]).optional(), // на башкирском: название или описание события написаны по-башкирски (BASHKIR_LETTERS)
+  durationMax: z.coerce.number().int().min(10).max(1440).optional(), // не дольше, мин; без длительности — с пометкой
+  fromHour: z.coerce.number().int().min(0).max(23).optional(), // начало не раньше этого часа по Уфе («после 19:00», «вечером»)
   near: point.optional(), // «рядом со мной»: lat,lon
   radius: z.coerce.number().min(1).max(300).optional(), // км, вместе с near; по умолчанию — из настроек
   status: z.enum(["SCHEDULED", "RESCHEDULED", "CANCELLED", "SOLD_OUT", "PAST"]).optional(),
@@ -60,6 +63,26 @@ export function parseEventFilter(params: URLSearchParams | Record<string, string
   const entries = params instanceof URLSearchParams ? [...params] : Object.entries(params);
   return eventFilterSchema.safeParse(Object.fromEntries(entries.filter(([, v]) => v != null && v !== "")));
 }
+
+/**
+ * Башкирский текст события: буквы, которых нет ни в русском, ни в татарском (ә ө ү ң һ есть и в татарском —
+ * по ним «Нур» попал бы в башкирские). Плюс явное «на башкирском» в тексте и поле языка. Так язык определяется
+ * по самим сведениям источника — названию и описанию, — а не по названию площадки.
+ */
+export const BASHKIR_LETTERS = ["ғ", "ҙ", "ҡ", "ҫ", "Ғ", "Ҙ", "Ҡ", "Ҫ"];
+export function bashkirText(e: { title: string; description?: string | null; language?: string | null }) {
+  const text = `${e.title} ${e.description ?? ""}`;
+  return BASHKIR_LETTERS.some((ch) => text.includes(ch)) || /на башкирском|башкирском языке/i.test(text) || /башкир/i.test(e.language ?? "");
+}
+const BASHKIR_WHERE: Prisma.EventWhereInput = {
+  OR: [
+    ...BASHKIR_LETTERS.flatMap((ch) => [{ title: { contains: ch } }, { description: { contains: ch } }]),
+    { title: { contains: "на башкирском", mode: "insensitive" } },
+    { description: { contains: "на башкирском", mode: "insensitive" } },
+    { description: { contains: "башкирском языке", mode: "insensitive" } },
+    { language: { contains: "башкир", mode: "insensitive" } },
+  ],
+};
 
 /** Сортировка. События без цены — в конце; при равенстве — по дате. distance — считается после выборки. */
 const ORDER: Record<EventFilter["sort"], Prisma.EventOrderByWithRelationInput[]> = {
@@ -156,6 +179,19 @@ async function searchCore(f: FilterInput, notCategory?: string) {
         lon: { gte: f.near.lon - radius / (111 * Math.cos((f.near.lat * Math.PI) / 180)), lte: f.near.lon + radius / (111 * Math.cos((f.near.lat * Math.PI) / 180)) },
       }
     : null;
+  // Длительность из времени окончания (тот же день): Prisma не сравнивает два поля — такие события отбираем запросом
+  const tooLong = f.durationMax != null
+    ? (await db.$queryRaw<{ id: string }[]>`SELECT id FROM "Event" WHERE "durationMin" IS NULL AND "endsAt" IS NOT NULL
+        AND "endsAt" - "startsAt" > make_interval(mins => ${f.durationMax}::int) AND "endsAt" - "startsAt" < interval '12 hours'
+        AND status <> 'PAST'`).map((r) => r.id)
+    : [];
+  // Время начала: разовые события, начинающиеся раньше fromHour по Уфе (многодневные — выставки — не отсекаем)
+  const tooEarly = f.fromHour != null
+    ? (await db.$queryRaw<{ id: string }[]>`SELECT id FROM "Event" WHERE status <> 'PAST'
+        AND EXTRACT(HOUR FROM ("startsAt" AT TIME ZONE 'UTC' AT TIME ZONE 'Asia/Yekaterinburg')) < ${f.fromHour}::int
+        AND ("endsAt" IS NULL OR "endsAt" - "startsAt" < interval '12 hours')
+        AND "startsAt" >= ${f.dateFrom ?? new Date()} AND "startsAt" <= ${f.dateTo ?? new Date(Date.now() + 400 * 86_400_000)}`).map((r) => r.id)
+    : [];
   const where: Prisma.EventWhereInput = {
     // По умолчанию — только актуальные: отменённые и прошедшие в выдачу не попадают (ТЗ 6.1, метрика 11).
     // Отменённое доступно по прямой ссылке с пометкой и по явному status=CANCELLED.
@@ -165,13 +201,23 @@ async function searchCore(f: FilterInput, notCategory?: string) {
     // Так в выборку попадают и идущие выставки. Без dateFrom период начинается «сейчас» (кроме поиска по статусу).
     startsAt: { lte: f.dateTo },
     AND: [
+      // Нижняя граница — не раньше «сейчас»: «в субботу» в субботу вечером не должно предлагать сеанс, начавшийся
+      // днём. Идущие события с временем окончания (выставка, концерт в разгаре) остаются по endsAt. Поиск по статусу
+      // (история отмен) — без этого ограничения.
       ...(f.dateFrom || !f.status
-        ? [{ OR: [{ startsAt: { gte: f.dateFrom ?? new Date() } }, { endsAt: { gte: f.dateFrom ?? new Date() } }] }]
+        ? (() => {
+            const from = f.status || (f.dateFrom && f.dateFrom > new Date()) ? f.dateFrom ?? new Date() : new Date();
+            return [{ OR: [{ startsAt: { gte: from } }, { endsAt: { gte: from } }] }];
+          })()
         : []),
       f.q ? { OR: [{ title: { contains: f.q, mode: "insensitive" } }, { description: { contains: f.q, mode: "insensitive" } }, { venue: { name: { contains: f.q, mode: "insensitive" } } }, { venue: { aliases: { some: { name: { contains: f.q, mode: "insensitive" } } } } }, { venue: { building: { OR: [{ name: { contains: f.q, mode: "insensitive" } }, { aliases: { some: { name: { contains: f.q, mode: "insensitive" } } } }] } } }] } : {},
       f.age != null ? { OR: [{ ageLimit: null }, { ageLimit: { lte: f.age } }] } : {},
       f.city ? { venue: { city: { equals: f.city, mode: "insensitive" } } } : {},
       box ? { venue: { ...box, approx: false } } : {}, // центр города вместо адреса — не «рядом»
+      f.lang === "ba" ? BASHKIR_WHERE : {},
+      // Длительность: известная — не дольше заданной; неизвестная — остаётся (пометка «длительность не указана»)
+      f.durationMax != null ? { OR: [{ durationMin: null }, { durationMin: { lte: f.durationMax } }] } : {},
+      tooLong.length || tooEarly.length ? { id: { notIn: [...tooLong, ...tooEarly] } } : {},
     ],
     ...(f.category ? { category: { slug: f.category } } : {}),
     ...(notCategory ? { NOT: { category: { is: { slug: notCategory } } } } : {}),

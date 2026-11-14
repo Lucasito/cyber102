@@ -84,7 +84,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<SP>
       {label}
     </Chip>
   );
-  const hasFilters = ["q", "city", "category", "dateFrom", "dateTo", "priceMax", "free", "age", "pushkin", "access", "near"].some((k) => sp[k]);
+  const hasFilters = ["q", "city", "category", "dateFrom", "dateTo", "priceMax", "free", "age", "pushkin", "access", "lang", "durationMax", "near"].some((k) => sp[k]);
   const mapView = sp.view === "map";
   // Для карты — до 200 событий текущей выборки, сгруппированных по площадкам
   const mapPoints: MapPoint[] = [];
@@ -149,6 +149,12 @@ export default async function Home({ searchParams }: { searchParams: Promise<SP>
           <Chip href={href(sp, { access: sp.access ? null : "wheelchair" })} active={!!sp.access}>
             {t("access")}
           </Chip>
+          <Chip href={href(sp, { lang: sp.lang ? null : "ba" })} active={!!sp.lang}>
+            {t("chipBashkir")}
+          </Chip>
+          <Chip href={href(sp, { durationMax: sp.durationMax ? null : "120" })} active={!!sp.durationMax}>
+            {t("chipShort")}
+          </Chip>
           <Suspense>
             <NearMeButton active={!!sp.near} label={t("nearMe")} errors={{ unsupported: t("geoUnsupported"), denied: t("geoDenied") }} />
           </Suspense>
@@ -171,6 +177,8 @@ export default async function Home({ searchParams }: { searchParams: Promise<SP>
             {sp.age && <input type="hidden" name="age" value={sp.age} />}
             {sp.pushkin && <input type="hidden" name="pushkin" value={sp.pushkin} />}
             {sp.access && <input type="hidden" name="access" value={sp.access} />}
+            {sp.lang && <input type="hidden" name="lang" value={sp.lang} />}
+            {sp.durationMax && <input type="hidden" name="durationMax" value={sp.durationMax} />}
             {sp.near && <input type="hidden" name="near" value={sp.near} />}
             {sp.view && <input type="hidden" name="view" value={sp.view} />}
             <label className="sr-only" htmlFor="f-q">{t("qPlaceholder")}</label>

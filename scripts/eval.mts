@@ -10,7 +10,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { runAgent, type AgentReply } from "../lib/server/agent.ts";
 import { aiProviderName, type ChatMessage } from "../lib/server/ai.ts";
 import { db } from "../lib/server/db.ts";
-import { datePresets, localDay, searchEvents, TZ, type EventItem } from "../lib/server/events.ts";
+import { bashkirText, datePresets, localDay, searchEvents, TZ, type EventItem } from "../lib/server/events.ts";
 import { getSettings } from "../lib/server/settings.ts";
 
 type Constraints = {
@@ -25,6 +25,8 @@ type Constraints = {
   pushkin?: boolean;
   access?: string;
   venue?: string; // часть названия площадки
+  lang?: "ba"; // название или описание события по-башкирски
+  durationMax?: number; // известная длительность не больше, мин
 };
 type Case = {
   id: string;
@@ -123,6 +125,12 @@ function violations(e: DbEvent, c: Constraints): string[] {
   if (c.afterHour != null && localHour(e.startsAt) < c.afterHour) out.push(`время ${localHour(e.startsAt)}:00`);
   if (c.venue && !e.venue?.name.toLowerCase().includes(c.venue.toLowerCase())) out.push(`площадка ${e.venue?.name ?? "—"}`);
   if (c.pushkin && !e.pushkinCard) out.push("не по Пушкинской карте");
+  if (c.lang === "ba" && !bashkirText(e)) out.push("не на башкирском");
+  if (c.durationMax != null) {
+    const span = e.endsAt ? e.endsAt.getTime() - e.startsAt.getTime() : null;
+    const d = e.durationMin ?? (span != null && span < 12 * 3_600_000 ? Math.round(span / 60_000) : null);
+    if (d != null && d > c.durationMax) out.push(`${d} мин`);
+  }
   if (c.access && !e.accessibility.includes(c.access)) out.push(`нет «${c.access}»`);
   if (c.q) {
     const text = `${e.title} ${e.description ?? ""} ${e.tags.join(" ")}`.toLowerCase();
@@ -160,6 +168,8 @@ function factCheck(text: string, events: FactEvent[], userText: string) {
   for (const m of text.matchAll(/(\d[\d\s]{0,6}\d|\d)\s*(?:₽|руб)/g)) {
     const n = Number(m[1].replace(/\s/g, ""));
     if (said(String(n))) continue;
+    // «до 1000 ₽», «не дороже 1000 ₽» — граница условия (бюджет из «недорого»), а не цена события
+    if (/(?:до|не дороже|дешевле|не больше)\s*$/i.test(text.slice(Math.max(0, (m.index ?? 0) - 14), m.index))) continue;
     claims.push({ claim: `${n} ₽`, ok: events.some((e) => e.priceMin === n || e.priceMax === n) });
   }
   for (const m of text.matchAll(/(?<![\d:])(\d{1,2}):(\d{2})(?![\d:])/g)) {

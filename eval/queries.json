@@ -1,5 +1,5 @@
 {
-  "about": "Контрольный набор запросов к ИИ-агенту (ТЗ, раздел 9.2 и Приложение А). Прогон: npm run eval. Ожидаемый результат скрипт считает по базе: если события под условия есть — агент должен их показать и выполнить все условия; если нет — честно сказать, что точных совпадений нет. Поля: constraints — условия (city, category, free, priceMax, age, date, afterHour, q, pushkin, access); forbid — чего не должно быть в ответе; mustInclude — что должно быть; noRepeat — без событий из прошлых реплик; cheaper — дешевле прошлой подборки; tool — ожидаемый инструмент (по умолчанию search_events, у статуса — get_event); bot — диалог от пользователя бота; plan — план дня (ok: составлен ли; persons, budget, count — как разобраны условия). Даты — относительные: today, tomorrow, weekend, friday, saturday, sunday, week (до воскресенья), next_week, month (до конца месяца).",
+  "about": "Контрольный набор запросов к ИИ-агенту (ТЗ, раздел 9.2 и Приложение А). Прогон: npm run eval. Ожидаемый результат скрипт считает по базе: если события под условия есть — агент должен их показать и выполнить все условия; если нет — честно сказать, что точных совпадений нет. Поля: constraints — условия (city, category, free, priceMax, age, date, afterHour, q, pushkin, access, lang — на башкирском, durationMax — не дольше, мин); forbid — чего не должно быть в ответе; mustInclude — что должно быть; noRepeat — без событий из прошлых реплик; cheaper — дешевле прошлой подборки; tool — ожидаемый инструмент (по умолчанию search_events, у статуса — get_event); bot — диалог от пользователя бота; plan — план дня (ok: составлен ли; persons, budget, count — как разобраны условия). Даты — относительные: today, tomorrow, weekend, friday, saturday, sunday, week (до воскресенья), next_week, month (до конца месяца).",
   "cases": [
     {
       "id": "simple-ufa-weekend",
@@ -106,7 +106,8 @@
       "constraints": {
         "age": 7,
         "date": "saturday",
-        "priceMax": 1000
+        "priceMax": 1000,
+        "durationMax": 120
       }
     },
     {
@@ -445,9 +446,7 @@
         "Мероприятия на башкирском языке для детей"
       ],
       "constraints": {
-        "q": [
-          "башкир"
-        ],
+        "lang": "ba",
         "age": 6
       }
     },
