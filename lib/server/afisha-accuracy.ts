@@ -135,6 +135,7 @@ export async function measureAfishaAccuracy({ sample = 50, days = 7 } = {}): Pro
     return s ? [{ e, source: s.source, url: s.url }] : [];
   });
   const pages = new Map<string, Promise<string>>();
+  const sourceUrls = new Map((await db.source.findMany({ select: { code: true, url: true } })).map((s) => [s.code, s.url]));
   const cards: CardCheck[] = [];
   for (const { e, source, url } of stratified(candidates, sample)) {
     const card: CardCheck = { id: e.id, title: e.title, source, url, startsAt: e.startsAt.toISOString(), result: "unverified", problems: [], warnings: [] };
@@ -142,6 +143,22 @@ export async function measureAfishaAccuracy({ sample = 50, days = 7 } = {}): Pro
       if (!pages.has(url)) pages.set(url, fetchText(url, { accept: "text/html", cookies: true }).then((r) => r.text));
       const html = await pages.get(url)!;
       Object.assign(card, checkCard({ ...e, city: e.venue?.city ?? "" }, html));
+      // Страница спектакля часто без расписания: дата и время — на странице афиши источника, откуда их и взял
+      // сборщик. Не нашлось на странице события — сверяем там (название тоже должно там быть)
+      const listUrl = card.problems.some((p) => p === "дата" || p === "время") ? sourceUrls.get(source) : undefined;
+      if (listUrl && listUrl !== url) {
+        try {
+          if (!pages.has(listUrl)) pages.set(listUrl, fetchText(listUrl, { accept: "text/html", cookies: true }).then((r) => r.text));
+          const list = checkCard({ ...e, city: e.venue?.city ?? "" }, await pages.get(listUrl)!);
+          if (!list.problems.includes("название")) {
+            const confirmed = ["дата", "время"].filter((p) => !list.problems.includes(p));
+            if (confirmed.length) {
+              card.problems = card.problems.filter((p) => !confirmed.includes(p));
+              card.warnings.push(`${confirmed.join(" и ")} — на странице афиши источника`);
+            }
+          }
+        } catch { /* страница афиши не загрузилась — остаётся результат по странице события */ }
+      }
       card.result = card.problems.length ? "mismatch" : "ok";
     } catch (err) {
       card.warnings.push(`страница не загрузилась: ${err instanceof Error ? err.message : err}`);

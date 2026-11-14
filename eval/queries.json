@@ -452,17 +452,17 @@
       }
     },
     {
-      "id": "simple-revizor-price",
+      "id": "simple-title-price",
       "type": "simple",
       "dialog": [
-        "Сколько стоит билет на «Ревизор»?"
+        "Сколько стоит билет на «{priced}»?"
       ],
       "tool": [
         "search_events",
         "get_event"
       ],
       "mustInclude": [
-        "600"
+        "{priced_price}"
       ]
     },
     {
@@ -1017,10 +1017,10 @@
       }
     },
     {
-      "id": "plan-saturday-child",
+      "id": "plan-tomorrow-child",
       "type": "plan",
       "dialog": [
-        "Спланируй субботу с ребёнком 6 лет в Уфе, бюджет 1500 рублей"
+        "Спланируй день на завтра с ребёнком 6 лет в Уфе, бюджет 1500 рублей"
       ],
       "tool": "plan_day",
       "plan": {
@@ -1033,7 +1033,7 @@
       "id": "plan-window",
       "type": "plan",
       "dialog": [
-        "Составь программу на субботу с 12 до 18, на одного, до 1000 рублей"
+        "Составь программу на завтра с 12 до 18, на одного, до 1000 рублей"
       ],
       "tool": "plan_day",
       "plan": {

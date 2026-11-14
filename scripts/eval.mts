@@ -51,11 +51,11 @@ const { cases: allCases } = JSON.parse(readFileSync("eval/queries.json", "utf8")
 // Подстановки {cancelled}, {rescheduled}, {scheduled}, {injected} — реальные события временной базы, которым
 // scripts/eval-run.mts поставил сценарные пометки (отмена, перенос, инъекция в описании). Выдуманных событий нет.
 const scenario = JSON.parse(process.env.EVAL_SCENARIO ?? "{}") as Record<string, string>;
-const fill = (text: string) => text.replace(/\{(cancelled|rescheduled|scheduled|injected)\}/g, (m, k: string) => {
+const fill = (text: string) => text.replace(/\{(cancelled|rescheduled|scheduled|injected|priced|priced_price)\}/g, (m, k: string) => {
   if (!scenario[k]) throw new Error(`Нет события для «${m}»: запускайте npm run eval — он готовит временную базу со снимком реальной афиши`);
   return scenario[k];
 });
-const cases = allCases.filter((c) => !only || only.has(c.id)).map((c) => ({ ...c, dialog: c.dialog.map(fill) }));
+const cases = allCases.filter((c) => !only || only.has(c.id)).map((c) => ({ ...c, dialog: c.dialog.map(fill), mustInclude: c.mustInclude?.map(fill) }));
 
 // ───────── Даты ─────────
 
@@ -283,7 +283,10 @@ for (const c of cases) {
   const mentioned = statusIds.length ? await db.event.findMany({ where: { id: { in: statusIds } }, include: { venue: true } }) : [];
   const userText = c.dialog.join(" ");
   // План дня проверяется отдельно и строже (порядок, пересечения, бюджет, цены × люди) — в сверку утверждений не идёт
-  const claims = replies.filter((r) => !r.clarify && !r.text.startsWith("План на ") && !r.text.startsWith("Составить план")).flatMap((r) => factCheck(r.text, [...r.events, ...mentioned], userText));
+  // Утверждение подтверждено событием этой реплики или показанным раньше в том же диалоге («а дешевле?» ссылается
+  // на прошлую подборку) — все они записи базы
+  const shown = replies.flatMap((r) => r.events);
+  const claims = replies.filter((r) => !r.clarify && !r.text.startsWith("План на ") && !r.text.startsWith("Составить план")).flatMap((r) => factCheck(r.text, [...r.events, ...shown, ...mentioned], userText));
   const text = replies.map((r) => r.text).join("\n").toLowerCase();
 
   let pass = fabricated === 0;

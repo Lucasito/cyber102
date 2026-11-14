@@ -212,13 +212,13 @@ export function parseRodina(html: string, pageUrl: string): Session[] {
   const out: Session[] = [];
   for (const tile of html.split('<div class="movies-tile ').slice(1)) {
     const title = clean(pick(tile, /movies-tile-title">([\s\S]*?)<\/div>/));
-    const href = pick(tile, /href="([^"]+)" class="movies-tile-general"/);
     const common = {
       title,
       genre: clean(pick(tile, /movies-tile-genre">([\s\S]*?)<\/div>/)) || undefined,
       age: age(pick(tile, /movie-age-label[^"]*">([^<]*)</)),
       imageUrl: (() => { const src = pick(tile, /movies-tile-poster">[\s\S]*?data-src="([^"]+)"/); return src ? abs(src, pageUrl) : undefined; })(),
-      sourceUrl: href ? abs(href, pageUrl) : pageUrl,
+      // Расписание всех дней — на главной; страница фильма его не показывает
+      sourceUrl: pageUrl,
     };
     for (const m of tile.matchAll(/data-date="(\d{4}-\d\d-\d\d)"[^>]*?data-seance-id="([^"]+)"[^>]*>\s*<div class="movie-session-time">(\d{1,2}:\d\d)<\/div>(?:\s*<div class="movie-session-cost">([^<]*)<\/div>)?/g)) {
       out.push({ ...common, id: m[2], date: m[1], time: m[3], price: price(m[4]) });
@@ -237,7 +237,6 @@ export function parseUltra(html: string, pageUrl: string, day: string): Session[
   const out: Session[] = [];
   for (const card of html.split('<article class="frow').slice(1)) {
     const title = clean(pick(card, /class="frow__title"[^>]*>([\s\S]*?)<\/a>/));
-    const href = pick(card, /class="frow__title" href="([^"]+)"/);
     const meta = clean(pick(card, /class="frow__meta">([\s\S]*?)<\/span>/));
     const common = {
       title,
@@ -245,7 +244,8 @@ export function parseUltra(html: string, pageUrl: string, day: string): Session[
       durationMin: duration(meta),
       age: age(pick(card, /class="frow__age">([^<]*)</)),
       imageUrl: pick(card, /class="frow__poster[^"]*"[^>]*><img src="([^"]+)"/),
-      sourceUrl: href ? abs(href, pageUrl) : pageUrl,
+      // Страница фильма показывает только сегодняшние сеансы — ссылка на расписание дня, где виден этот сеанс
+      sourceUrl: pageUrl,
     };
     for (const group of card.split('<div class="frow__group">').slice(1)) {
       const format = clean(pick(group, /class="frow__fmt">([^<]*)</)) || undefined;
@@ -534,7 +534,7 @@ export function parseArsenal(html: string, pageUrl: string, now = new Date()): S
         genre: genreP.at(-1) || undefined,
         imageUrl: img ? abs(img, pageUrl) : undefined,
         pushkin: film.includes("timetable__pushkin_active"),
-        sourceUrl: href ? abs(href, pageUrl) : pageUrl,
+        sourceUrl: pageUrl, // вкладки дней с сеансами — на главной
       };
       for (const m of film.matchAll(/timetable__time">\s*(\d{1,2}:\d\d)\s*<\/p>\s*<p class="timetable__price">([^<]*)</g)) {
         out.push({ ...common, id: `${day}:${m[1]}:${href ?? title}`, date: day, time: m[1], price: price(m[2]) });

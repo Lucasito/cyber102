@@ -98,7 +98,7 @@ async function candidates(input: PlanInput): Promise<Candidate[]> {
     },
     include: eventInclude,
     orderBy: { startsAt: "asc" },
-    take: 200,
+    take: 2000, // киносеансов за день бывают сотни — отбор кандидатов ниже, а не первыми по времени
   });
   const out: Candidate[] = [];
   for (const e of rows) {
@@ -112,7 +112,25 @@ async function candidates(input: PlanInput): Promise<Candidate[]> {
       out.push({ event: item, flexible: false, start: e.startsAt, end, durMin: minutes(end.getTime() - e.startsAt.getTime()), cost, durationEstimated: !e.endsAt && !e.durationMin });
     }
   }
-  return out.sort((a, b) => Number(input.keep.includes(b.event.id)) - Number(input.keep.includes(a.event.id))).slice(0, MAX_CANDIDATES);
+  // Кандидаты: сохранённые остановки; затем то, что попадает в окно; не кино раньше кино (сеансов сотни, иначе
+  // они вытесняют спектакли и концерты); у кино — не больше двух сеансов одного фильма. Перебор — по MAX_CANDIDATES.
+  const winFrom = at(input.date, input.from), winTo = at(input.date, input.to);
+  const inWindow = (c: Candidate) => c.flexible || (c.start >= winFrom && c.end <= winTo);
+  const isCinema = (c: Candidate) => c.event.category?.slug === "cinema";
+  const perFilm = new Map<string, number>();
+  const ranked = out
+    .sort((a, b) =>
+      Number(input.keep.includes(b.event.id)) - Number(input.keep.includes(a.event.id)) ||
+      Number(inWindow(b)) - Number(inWindow(a)) ||
+      Number(isCinema(a)) - Number(isCinema(b)) ||
+      a.start.getTime() - b.start.getTime())
+    .filter((c) => {
+      if (!isCinema(c) || input.keep.includes(c.event.id)) return true;
+      const n = (perFilm.get(c.event.normalizedTitle) ?? 0) + 1;
+      perFilm.set(c.event.normalizedTitle, n);
+      return n <= 2;
+    });
+  return ranked.slice(0, MAX_CANDIDATES);
 }
 
 type Limits = { budget: number; from: Date; to: Date; maxTravelMin: number; transport: PlanInput["transport"]; keep: string[] };
