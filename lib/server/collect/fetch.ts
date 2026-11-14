@@ -3,13 +3,18 @@ import "server-only";
 // Загрузка страниц и лент для сборщиков: таймаут, предел размера, понятные ошибки.
 // User-Agent — общий, без персональных данных; сайты учреждений видят, кто к ним ходит.
 
+import { robotsAllow } from "./robots";
+
 const UA = "AfishaRB/1.0 (+https://afisha.193-47-33-213.sslip.io/docs/format)";
 const MAX_BYTES = 3 * 1024 * 1024;
 
 export class FetchError extends Error {}
 
-/** Текст по адресу (http/https). Ответ больше 3 МБ, не 2xx или дольше timeoutMs — ошибка. */
-export async function fetchText(url: string, { timeoutMs = 20_000, accept = "*/*" } = {}): Promise<{ text: string; contentType: string; finalUrl: string }> {
+/**
+ * Текст по адресу (http/https). Ответ больше 3 МБ, не 2xx или дольше timeoutMs — ошибка.
+ * robots — соблюдать robots.txt сайта (сборщик); проверка ленты по просьбе владельца сайта — без него.
+ */
+export async function fetchText(url: string, { timeoutMs = 20_000, accept = "*/*", robots = true } = {}): Promise<{ text: string; contentType: string; finalUrl: string }> {
   let target: URL;
   try {
     target = new URL(url);
@@ -17,6 +22,7 @@ export async function fetchText(url: string, { timeoutMs = 20_000, accept = "*/*
     throw new FetchError("адрес не похож на ссылку");
   }
   if (target.protocol !== "http:" && target.protocol !== "https:") throw new FetchError("поддерживаются только ссылки http(s)");
+  if (robots && !(await robotsAllow(target, UA))) throw new FetchError("сайт закрыл эту страницу для роботов (robots.txt)");
   let res: Response;
   try {
     res = await fetch(target, { redirect: "follow", signal: AbortSignal.timeout(timeoutMs), headers: { "User-Agent": UA, Accept: accept } });

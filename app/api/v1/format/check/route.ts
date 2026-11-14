@@ -33,7 +33,7 @@ export const POST = apiRoute("POST /api/v1/format/check", async (request) => {
   if ("url" in body.data) {
     url = body.data.url;
     try {
-      text = (await fetchText(url)).text;
+      text = (await fetchText(url, { robots: false })).text; // проверку запускает владелец ленты — robots.txt не нужен
     } catch (e) {
       return apiError(422, "fetch_failed", `Не удалось загрузить ленту: ${e instanceof Error ? e.message : e}`);
     }
