@@ -522,8 +522,12 @@ async function agentCore(
     ],
     { temperature: T.explainTemperature, maxTokens: T.explainMaxTokens },
   );
-  let explainedByAi = !noAi;
-  const explanation = noAi
+  // «Самое дорогое / дешёвое» — превосходную степень называет код по отсортированному списку: модель путала порядок
+  const byPrice = current.sort === "price_desc" || current.sort === "price_asc" ? priceExplanation(items, current.sort) : null;
+  let explainedByAi = !noAi && !byPrice;
+  const explanation = byPrice
+    ? byPrice
+    : noAi
     ? templateExplanation(items, current)
     : await explain().catch((e) => {
         // ИИ недоступен — объяснение по шаблону, подборка всё равно показывается
@@ -804,6 +808,21 @@ export function stripLinks(text: string) {
 
 /** Фильтр для трассы: без пустых полей, даты — строками. */
 const plain = (f: EventFilter) => JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(f).filter(([, v]) => v != null)))) as Record<string, unknown>;
+
+/** «Самое дорогое — «A», до 1800 ₽, сб, 20 ноября, Большой зал. Дальше: «B» — 1500 ₽, «C» — 1200 ₽.» */
+function priceExplanation(items: EventItem[], sort: "price_desc" | "price_asc") {
+  const priced = items.filter((e) => e.priceMin != null);
+  if (!priced.length) return null;
+  const desc = sort === "price_desc";
+  const price = (e: EventItem) => (e.priceMin === 0 && !e.priceMax ? "бесплатно" : desc ? `до ${e.priceMax ?? e.priceMin} ₽` : `от ${e.priceMin} ₽`);
+  const [first, ...rest] = priced;
+  const day = first.startsAt.toLocaleString("ru-RU", { timeZone: TZ, weekday: "short", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
+  const next = rest.slice(0, 2).map((e) => `«${e.title}» — ${price(e)}`);
+  return (
+    `${desc ? "Самое дорогое" : "Самое доступное"} — «${first.title}», ${price(first)}, ${day}${first.venue ? `, ${first.venue.name}` : ""}.` +
+    (next.length ? ` Дальше по цене: ${next.join(", ")}.` : "")
+  );
+}
 
 /** Объяснение без ИИ: что учтено и что ближе всего. */
 function templateExplanation(items: EventItem[], f: EventFilter) {
