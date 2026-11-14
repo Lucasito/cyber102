@@ -43,6 +43,7 @@ export const BOT_COMMANDS = [
   { command: "free", description: "Бесплатные события", query: "/f free=1" },
   { command: "kids", description: "Куда сходить с ребёнком", query: "/f age=6" },
   { command: "pushkin", description: "По Пушкинской карте", query: "/f pushkin=1" },
+  { command: "plan", description: "План на выходной день", query: "Составь план на выходной" },
   { command: "subs", description: "Мои подписки", query: null },
   { command: "unsubscribe", description: "Отписаться от всех", query: null },
   { command: "reminders", description: "Мои напоминания", query: null },

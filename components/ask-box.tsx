@@ -237,6 +237,14 @@ export function AskBox({
       <div>
         {form}
         <div className="no-scrollbar mt-3 flex gap-2 overflow-x-auto sm:flex-wrap sm:justify-center">
+          {/* Планировщик выходного дня — отдельной кнопкой: иначе о нём не догадаться */}
+          <button
+            type="button"
+            onClick={() => void ask("Составь план на выходной", t.planDay)}
+            className="shrink-0 rounded-full bg-[var(--brand)]/10 px-3.5 py-1.5 text-sm font-medium text-[var(--brand)] ring-1 ring-[var(--brand)]/20 hover:bg-[var(--brand)]/15"
+          >
+            {t.planDay}
+          </button>
           {examples.map((ex) => (
             <button
               key={ex}
