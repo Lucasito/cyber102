@@ -82,7 +82,13 @@ export function checkCard(e: { title: string; startsAt: Date; endsAt: Date | nul
   const text = norm(htmlToText(html, 400_000));
   const raw = html.toLowerCase();
   const problems: string[] = [], warnings: string[] = [];
-  if (!titleOnPage(e.title, text)) problems.push("название");
+  // Название: слова карточки есть на странице — или официальный заголовок страницы целиком входит в название карточки
+  // (лента добавляет программу: «Ансамбль «Забава» с программой «…»» при заголовке страницы «Ансамбль «Забава»»)
+  const pageTitle = norm(htmlToText(html.match(/<title[^>]*>([\s\S]*?)<\/title>/i)?.[1] ?? "", 500).split(/\s+[—–|]\s+|\s+-\s+/)[0] ?? "");
+  const pageWords = pageTitle.split(" ").filter((w) => w.length >= 3);
+  const cardTitle = norm(e.title);
+  const titleByPage = pageWords.length >= 2 && pageWords.every((w) => cardTitle.includes(w));
+  if (!titleOnPage(e.title, text) && !titleByPage) problems.push("название");
   const multiDay = e.endsAt && e.endsAt.getTime() - e.startsAt.getTime() > 12 * 3_600_000;
   // Выставки и сезонные события: дата начала может быть давно; достаточно даты начала или окончания
   if (!dateOnPage(e.startsAt, text, raw) && !(multiDay && e.endsAt && dateOnPage(e.endsAt, text, raw))) problems.push("дата");

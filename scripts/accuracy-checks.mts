@@ -31,6 +31,12 @@ check("другое название ловится, порядок слов и 
   assert.deepEqual(checkCard({ ...card, title: "Ревизор" }, page).problems, ["название"]);
   assert.deepEqual(checkCard({ ...card, title: "«Женитьба», спектакль" }, page).problems, []);
 });
+check("название длиннее заголовка страницы (лента добавила программу) — совпадение", () => {
+  const html = `<html><head><title>Ансамбль «Забава» &#8212; Филармония</title></head><body><p>20 ноября, 19:00</p></body></html>`;
+  const c = { title: "Ансамбль «Забава» с программой «Там, где поёт душа»", startsAt: new Date("2026-11-20T19:00:00+05:00"), endsAt: null, priceMin: null, city: "" };
+  assert.deepEqual(checkCard(c, html).problems, []);
+  assert.deepEqual(checkCard({ ...c, title: "Хор «Радуга»" }, html).problems, ["название"]);
+});
 check("неверный город — предупреждение", () => assert.deepEqual(checkCard({ ...card, city: "Салават" }, page).warnings, ["город не упомянут на странице"]));
 check("отмена на странице — предупреждение для метрики 11", () => {
   assert.ok(checkCard(card, page.replace("</h1>", "</h1><p>Спектакль отменён по болезни актёра</p>")).warnings.some((w) => w.includes("отменено")));
