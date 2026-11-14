@@ -37,22 +37,23 @@ const PAGES = [
 
 /**
  * Кинотеатры (docs/CINEMA_SOURCES.md): индивидуальные парсеры без ИИ (lib/server/collect/cinemas.ts), один сеанс —
- * одно событие. Все сеансы — в одном здании, поэтому площадка задана в источнике. Не добавлены: Киномакс «Планета»
+ * одно событие. Все сеансы — в одном здании, поэтому площадка с координатами задана в источнике
+ * (координаты — Nominatim по адресу, проверены по названию здания; «Мир кино» — с официального сайта). Не добавлены: Киномакс «Планета»
  * (CAPTCHA), «Горняк» (нет расписания на сайте), «Супер 8» и «Аврора» (сеансы только через JavaScript).
  */
 const CINEMAS = [
-  { code: "kino-mirage-str", adapter: "cinema-mirage", name: "Мираж Синема «Арбат», Стерлитамак", url: "https://www.mirage.ru/str/schedule/", city: "Стерлитамак", venueName: "Мираж Синема «Арбат»", venueAddress: "ул. Артёма, 96" },
-  { code: "kino-kinoport-str", adapter: "cinema-premierzal", name: "Кинопорт, Стерлитамак", url: "https://kino-str.ru/schedule", city: "Стерлитамак", venueName: "Кинотеатр «Кинопорт»", venueAddress: "ул. Худайбердина, 120, ТЦ «Фабри»" },
-  { code: "kino-arsenal-neftekamsk", adapter: "cinema-arsenal", name: "Кинотеатр «Арсенал», Нефтекамск", url: "https://arsenal-club.com/", city: "Нефтекамск", venueName: "Кинотеатр «Арсенал»", venueAddress: "Комсомольский проспект, 27Б" },
-  { code: "kino-fontan-okt", adapter: "cinema-premierzal", name: "Кинотеатр «Фонтан», Октябрьский", url: "https://fountain-okt.ru/schedule", city: "Октябрьский", venueName: "Кинотеатр «Фонтан»", venueAddress: "проспект Ленина, 16" },
-  { code: "kino-metallurg-beloretsk", adapter: "cinema-premierzal", name: "Кинотеатр «Металлург», Белорецк", url: "https://metallurg-cinema.ru/schedule", city: "Белорецк", venueName: "Кинотеатр «Металлург»", venueAddress: "ул. Карла Маркса, 70А" },
-  { code: "kino-mirkino-belebey", adapter: "cinema-p24", name: "Кинотеатр «Мир кино», Белебей", url: "https://mirkino-belebey.ru/", city: "Белебей", venueName: "Кинотеатр «Мир кино»", venueAddress: "ул. Ленина, 28" },
-  { code: "kino-rodina-ufa", adapter: "cinema-rodina", name: "Кинотеатр «Родина», Уфа", url: "https://rodina-ufa.ru/", city: "Уфа", venueName: "Кинотеатр «Родина»", venueAddress: "ул. Ленина, 42" },
-  { code: "kino-ultra-bakalinskaya", adapter: "cinema-ultra", name: "Ultra Cinema (ТКЦ ULTRA), Уфа", url: "https://ufa.ultra-cinema.ru/", city: "Уфа", venueName: "Ultra Cinema, ТКЦ ULTRA", venueAddress: "ул. Бакалинская, 27" },
-  { code: "kino-ultra-mir", adapter: "cinema-ultra", name: "Ultra Cinema (ЦТиР «Мир»), Уфа", url: "https://mir.ultra-cinema.ru/", city: "Уфа", venueName: "Ultra Cinema, ЦТиР «Мир»", venueAddress: "проспект Октября, 4/1" },
-  { code: "kino-cinema5-akvarin", adapter: "cinema-cinemabox", name: "Синема 5 «Акварин», Уфа", url: "https://cinema5.ru/ufa", city: "Уфа", venueName: "Синема 5, ТЦ «Акварин»", venueAddress: "ул. Ферина, 29" },
-  { code: "kino-cinemapark-galereya", adapter: "cinema-cinemapark", name: "Синема Парк «Галерея Арт», Уфа", url: "https://kinoteatr.ru/raspisanie-kinoteatrov/ufa/galereya-art/", city: "Уфа", venueName: "Синема Парк, ТРЦ «Галерея Арт»", venueAddress: "ул. Чернышевского, 75" },
-  { code: "kino-cinemapark-semya", adapter: "cinema-cinemapark", name: "Синема Парк «Семья», Уфа", url: "https://kinoteatr.ru/raspisanie-kinoteatrov/ufa/semya/", city: "Уфа", venueName: "Синема Парк, ТРК «Семья»", venueAddress: "проспект Октября, 34" },
+  { code: "kino-mirage-str", adapter: "cinema-mirage", name: "Мираж Синема «Арбат», Стерлитамак", url: "https://www.mirage.ru/str/schedule/", city: "Стерлитамак", venueName: "Мираж Синема «Арбат»", venueAddress: "ул. Артёма, 96", venueLat: 53.6224809, venueLon: 55.9012368 },
+  { code: "kino-kinoport-str", adapter: "cinema-premierzal", name: "Кинопорт, Стерлитамак", url: "https://kino-str.ru/schedule", city: "Стерлитамак", venueName: "Кинотеатр «Кинопорт»", venueAddress: "ул. Худайбердина, 120, ТЦ «Фабри»", venueLat: 53.6287254, venueLon: 55.9406118 },
+  { code: "kino-arsenal-neftekamsk", adapter: "cinema-arsenal", name: "Кинотеатр «Арсенал», Нефтекамск", url: "https://arsenal-club.com/", city: "Нефтекамск", venueName: "Кинотеатр «Арсенал»", venueAddress: "Комсомольский проспект, 27Б", venueLat: 56.0868614, venueLon: 54.2453158 },
+  { code: "kino-fontan-okt", adapter: "cinema-premierzal", name: "Кинотеатр «Фонтан», Октябрьский", url: "https://fountain-okt.ru/schedule", city: "Октябрьский", venueName: "Кинотеатр «Фонтан»", venueAddress: "проспект Ленина, 16", venueLat: 54.4822103, venueLon: 53.4717662 },
+  { code: "kino-metallurg-beloretsk", adapter: "cinema-premierzal", name: "Кинотеатр «Металлург», Белорецк", url: "https://metallurg-cinema.ru/schedule", city: "Белорецк", venueName: "Кинотеатр «Металлург»", venueAddress: "ул. Карла Маркса, 70А", venueLat: 53.968176, venueLon: 58.4090368 },
+  { code: "kino-mirkino-belebey", adapter: "cinema-p24", name: "Кинотеатр «Мир кино», Белебей", url: "https://mirkino-belebey.ru/", city: "Белебей", venueName: "Кинотеатр «Мир кино»", venueAddress: "ул. Ленина, 28", venueLat: 54.10425186, venueLon: 54.11124802 },
+  { code: "kino-rodina-ufa", adapter: "cinema-rodina", name: "Кинотеатр «Родина», Уфа", url: "https://rodina-ufa.ru/", city: "Уфа", venueName: "Кинотеатр «Родина»", venueAddress: "ул. Ленина, 42", venueLat: 54.72809, venueLon: 55.9493302 },
+  { code: "kino-ultra-bakalinskaya", adapter: "cinema-ultra", name: "Ultra Cinema (ТКЦ ULTRA), Уфа", url: "https://ufa.ultra-cinema.ru/", city: "Уфа", venueName: "Ultra Cinema, ТКЦ ULTRA", venueAddress: "ул. Бакалинская, 27", venueLat: 54.7173819, venueLon: 55.9847376 },
+  { code: "kino-ultra-mir", adapter: "cinema-ultra", name: "Ultra Cinema (ЦТиР «Мир»), Уфа", url: "https://mir.ultra-cinema.ru/", city: "Уфа", venueName: "Ultra Cinema, ЦТиР «Мир»", venueAddress: "проспект Октября, 4/1", venueLat: 54.7413618, venueLon: 55.9850374 },
+  { code: "kino-cinema5-akvarin", adapter: "cinema-cinemabox", name: "Синема 5 «Акварин», Уфа", url: "https://cinema5.ru/ufa", city: "Уфа", venueName: "Синема 5, ТЦ «Акварин»", venueAddress: "ул. Ферина, 29", venueLat: 54.7783861, venueLon: 56.1326648 },
+  { code: "kino-cinemapark-galereya", adapter: "cinema-cinemapark", name: "Синема Парк «Галерея Арт», Уфа", url: "https://kinoteatr.ru/raspisanie-kinoteatrov/ufa/galereya-art/", city: "Уфа", venueName: "Синема Парк, ТРЦ «Галерея Арт»", venueAddress: "ул. Чернышевского, 75", venueLat: 54.7294178, venueLon: 55.9465453 },
+  { code: "kino-cinemapark-semya", adapter: "cinema-cinemapark", name: "Синема Парк «Семья», Уфа", url: "https://kinoteatr.ru/raspisanie-kinoteatrov/ufa/semya/", city: "Уфа", venueName: "Синема Парк, ТРК «Семья»", venueAddress: "проспект Октября, 34", venueLat: 54.749679, venueLon: 56.0002227 },
 ];
 /** Кинотеатры, которые раньше добавлялись этим скриптом как «страница + ИИ» и ещё не включались. */
 const OLD_CINEMAS = ["kino-avrora-birsk", "kino-super8-tuymazy"];
@@ -77,6 +78,10 @@ for (const s of CINEMAS) {
   if (exists?.createdBy === "seed" && exists.kind === "html_ai" && !exists.enabled && !exists.lastRunAt) {
     await db.source.update({ where: { id: exists.id }, data: { ...s, kind: "custom", note, intervalHours: 24, collectAt: "07:00" } });
     switched++;
+  }
+  // Координаты здания: у добавленных раньше без них — дописываем (адрес в источнике тот же)
+  if (exists && exists.venueLat == null && exists.venueLon == null) {
+    await db.source.update({ where: { id: exists.id }, data: { venueLat: s.venueLat, venueLon: s.venueLon, venueAddress: exists.venueAddress ?? s.venueAddress } });
   }
   if (exists) continue;
   // Расписание кино меняется ежедневно: сбор раз в сутки утром
