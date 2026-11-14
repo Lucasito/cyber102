@@ -1,5 +1,5 @@
 // Начальный список источников (docs/DATA_SOURCES.md, docs/CINEMA_SOURCES.md): 5 RSS-лент, 10 страниц без RSS
-// и 12 кинотеатров: npm run sources:seed [-- --allow-remote]
+// и 12 кинотеатров: npm run sources:seed [-- --allow-remote] [-- --enable-cinemas]
 // Добавляет выключенными — модератор включает каждый в админке («Источники») после проверки.
 // Уже существующие (по коду) не трогает.
 import "dotenv/config";
@@ -84,6 +84,11 @@ for (const s of CINEMAS) {
   added++;
 }
 const removed = await db.source.deleteMany({ where: { code: { in: OLD_CINEMAS }, createdBy: "seed", enabled: false, lastRunAt: null } });
+// --enable-cinemas: включить кинотеатры с автопубликацией (данные структурированы и берутся с официальных сайтов)
+if (process.argv.includes("--enable-cinemas")) {
+  const on = await db.source.updateMany({ where: { code: { in: CINEMAS.map((c) => c.code) }, kind: "custom" }, data: { enabled: true, autoPublish: true } });
+  console.log(`Кинотеатров включено с автопубликацией: ${on.count}`);
+}
 if (switched || removed.count) console.log(`Кинотеатров переведено на парсеры: ${switched}, удалено несобираемых: ${removed.count}`);
 console.log(`Источников добавлено: ${added} (выключены — включите в админке после проверки)`);
 await db.$disconnect();
