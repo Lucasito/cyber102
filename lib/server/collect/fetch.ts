@@ -3,6 +3,7 @@ import "server-only";
 // Загрузка страниц и лент для сборщиков: таймаут, предел размера, понятные ошибки.
 // User-Agent — общий, без персональных данных; сайты учреждений видят, кто к ним ходит.
 
+import { getSettings } from "../settings";
 import { robotsAllow } from "./robots";
 
 const UA = "AfishaRB/1.0 (+https://afisha.193-47-33-213.sslip.io/docs/format)";
@@ -22,7 +23,8 @@ export async function fetchText(url: string, { timeoutMs = 20_000, accept = "*/*
     throw new FetchError("адрес не похож на ссылку");
   }
   if (target.protocol !== "http:" && target.protocol !== "https:") throw new FetchError("поддерживаются только ссылки http(s)");
-  if (robots && !(await robotsAllow(target, UA))) throw new FetchError("сайт закрыл эту страницу для роботов (robots.txt)");
+  // Соблюдение robots.txt включается в админке («Источники»)
+  if (robots && (await getSettings("collect")).respectRobots && !(await robotsAllow(target, UA))) throw new FetchError("сайт закрыл эту страницу для роботов (robots.txt)");
   let res: Response;
   try {
     res = await fetch(target, { redirect: "follow", signal: AbortSignal.timeout(timeoutMs), headers: { "User-Agent": UA, Accept: accept } });

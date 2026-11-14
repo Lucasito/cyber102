@@ -3,6 +3,9 @@ import { PageTitle, Section } from "@/components/admin/blocks";
 import { requireAdmin } from "@/lib/server/admin";
 import { SOURCE_KINDS, type SourceKind } from "@/lib/server/collect";
 import { db } from "@/lib/server/db";
+import { SettingsForm, Toggle } from "@/components/admin/ui";
+import { saveCollectSettings } from "@/app/admin/sources-actions";
+import { getSettings } from "@/lib/server/settings";
 
 const when = (d: Date | null) =>
   d ? d.toLocaleString("ru-RU", { timeZone: "Asia/Yekaterinburg", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "ещё не собирался";
@@ -10,6 +13,7 @@ const when = (d: Date | null) =>
 /** Источники событий для сборщика: модератор и администратор. */
 export default async function AdminSources() {
   await requireAdmin("MODERATOR");
+  const collect = await getSettings("collect");
   const sources = await db.source.findMany({ orderBy: [{ enabled: "desc" }, { name: "asc" }], include: { _count: { select: { items: true } } } });
   return (
     <>
@@ -31,6 +35,15 @@ export default async function AdminSources() {
           Добавить источник
         </Link>
       </div>
+      <Section title="Правила сбора">
+        <SettingsForm action={saveCollectSettings}>
+          <Toggle name="respectRobots" defaultChecked={collect.respectRobots} label="Соблюдать robots.txt сайтов" />
+          <p className="text-xs text-stone-500">
+            Включено — сборщик не загружает страницы, закрытые для роботов (на WordPress так часто закрыты ленты /feed/: источник тогда ставят на страницу
+            афиши). Выключено — загружает всё, что указано в источниках.
+          </p>
+        </SettingsForm>
+      </Section>
       <Section>
         {sources.length ? (
           <ul className="divide-y divide-black/5">

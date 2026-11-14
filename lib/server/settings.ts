@@ -77,6 +77,10 @@ export const settingsSchema = {
     extraSettlements: z.array(z.string().trim().max(60)).max(500).default([]),
   }),
   /** Башкирская локализация из админки: русский текст → перевод (подменяет встроенный). */
+  /** Сбор из источников: соблюдать robots.txt сайтов (выключено — страницы загружаются, даже если закрыты для роботов). */
+  collect: z.object({
+    respectRobots: bool,
+  }),
   i18n: z.object({
     ba: z.record(z.string(), z.string().max(3000)).default({}),
   }),

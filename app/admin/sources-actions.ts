@@ -8,6 +8,7 @@ import { ADAPTERS } from "@/lib/server/collect/adapters";
 import { previewSource, runSource, SOURCE_KINDS, type PreviewResult, type SourceKind } from "@/lib/server/collect";
 import { applySourceVenue } from "@/lib/server/collect/venue";
 import { db } from "@/lib/server/db";
+import { saveSettings } from "@/lib/server/settings";
 import type { ActionState } from "./actions";
 
 // Источники событий: модератор и администратор. Каждое действие начинается с requireAdmin("MODERATOR")
@@ -19,6 +20,20 @@ const num = (f: FormData, k: string, min: number, max: number, def: number) => {
   return Number.isFinite(n) && n >= min && n <= max ? Math.round(n) : def;
 };
 const fail = (e: unknown): ActionState => ({ ok: false, message: e instanceof Error ? e.message : String(e) });
+
+/** Общие настройки сбора: соблюдать ли robots.txt сайтов-источников. */
+export async function saveCollectSettings(_: ActionState, f: FormData): Promise<ActionState> {
+  const me = await requireAdmin("MODERATOR");
+  try {
+    const respectRobots = f.get("respectRobots") === "on";
+    await saveSettings("collect", { respectRobots });
+    await audit({ userLogin: me.login, action: "update", entity: "settings", summary: `Сбор: соблюдение robots.txt ${respectRobots ? "включено" : "выключено"}` });
+    revalidatePath("/admin/sources");
+    return { ok: true, message: respectRobots ? "Сборщик соблюдает robots.txt" : "robots.txt не учитывается" };
+  } catch (e) {
+    return fail(e);
+  }
+}
 
 /** Создать или сохранить источник. Новый — после сохранения открывается его карточка. */
 export async function saveSource(_: ActionState, f: FormData): Promise<ActionState> {
