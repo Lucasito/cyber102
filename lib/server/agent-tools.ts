@@ -33,7 +33,7 @@ export const TOOL_PROMPT = `Инструменты (поле "tool", аргум�
 - get_venue_schedule — что идёт на конкретной площадке (театр, филармония, музей, ДК). args: {"venue": string}; период — в "filter".
 - subscribe — подписаться на новые события. args: {"city": string?, "category": string?}.
 - save_feedback — передать сообщение организатору или сообщить об ошибке в карточке. args: {"title": string?, "message": string}.
-- plan_day — составить план на день из нескольких событий. args: {"date": "YYYY-MM-DD", "city": string?, "budget": number? (на всех), "persons": number?, "age": number?, "from": "HH:MM"?, "to": "HH:MM"?, "maxTravelMin": number?, "count": 2–4?}.`;
+- plan_day — составить план на день из нескольких событий. args: {"date": "YYYY-MM-DD", "city": string?, "budget": number? (на всех), "persons": number?, "age": number?, "from": "HH:MM"?, "to": "HH:MM"?, "maxTravelMin": number?, "count": 2–4?, "types": string[]? (слаги категорий: theatre, concert, cinema…; нет — все типы)}.`;
 
 /** Компактное представление события для трассы. */
 export function eventBrief(e: { id: string; title: string; startsAt: Date; status?: string; priceMin: number | null; ageLimit: number | null; venue: { name: string; city: string } | null }) {

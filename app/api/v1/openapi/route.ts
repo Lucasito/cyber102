@@ -148,6 +148,7 @@ export function GET(request: Request) {
             { name: "to", in: "query", schema: { type: "string", default: "22:00" }, description: "Конец свободного окна, HH:MM" },
             { name: "maxTravelMin", in: "query", schema: { type: "integer", default: 40 }, description: "Предел одного переезда, мин" },
             { name: "count", in: "query", schema: { type: "integer", minimum: 2, maximum: 4, default: 3 } },
+            { name: "types", in: "query", schema: { type: "string" }, description: "Типы мероприятий — слаги категорий через запятую (theatre,cinema) или повторами; не задано — все типы" },
             { name: "transport", in: "query", schema: { type: "string", enum: ["transit", "car", "walk"], default: "transit" } },
             { name: "keep", in: "query", schema: { type: "string" }, description: "До четырёх ID через запятую: остановки, которые должны остаться в плане" },
             { name: "exclude", in: "query", schema: { type: "string" }, description: "До 100 ID через запятую: исключённые события" },

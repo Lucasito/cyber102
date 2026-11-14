@@ -4,7 +4,7 @@ import { ArrowLeft, ArrowRight, CalendarPlus, MapPin, RefreshCw, Route, Users } 
 import { FavoriteButton } from "@/components/favorite-button";
 import { ShareButton } from "@/components/share-button";
 import { VenueMap, type MapPoint } from "@/components/venue-map";
-import { formatDateLongL, tr, type DictKey } from "@/lib/i18n";
+import { categoryName, formatDateLongL, tr, type DictKey } from "@/lib/i18n";
 import { TZ } from "@/lib/format";
 import { planParams } from "@/lib/plan-links";
 import { db } from "@/lib/server/db";
@@ -19,12 +19,16 @@ const field = "mt-1.5 w-full rounded-xl border border-black/10 bg-white px-3 py-
 
 export default async function PlanPage({ searchParams }: { searchParams: Promise<Record<string, string | string[] | undefined>> }) {
   const sp = await searchParams;
-  const raw = Object.fromEntries(Object.entries(sp).filter(([, v]) => typeof v === "string" && v !== ""));
+  // Флажки типов приходят повторами (?types=a&types=b) — склеиваем в список через запятую
+  const raw = Object.fromEntries(Object.entries(sp).flatMap(([k, v]) => { const s = Array.isArray(v) ? v.filter(Boolean).join(",") : v; return s ? [[k, s]] : []; }));
   const lang = await getLang(), t = (key: DictKey, values?: Record<string, string | number>) => tr(lang, key, values);
   const parsed = planInputSchema.safeParse({ date: defaultPlanDate(), ...raw });
   const input = parsed.success ? parsed.data : planInputSchema.parse({ date: defaultPlanDate() });
   const cities = (await db.venue.findMany({ distinct: ["city"], select: { city: true }, orderBy: { city: "asc" } })).map((v) => v.city);
   const cityOptions = [...new Set([input.city, ...cities])];
+  const categories = await db.category.findMany({ select: { slug: true, name: true }, orderBy: { name: "asc" } });
+  // По умолчанию отмечены все типы; пустой выбор планировщик тоже понимает как «все»
+  const typeChecked = (slug: string) => !input.types.length || input.types.includes(slug);
   const requested = Object.keys(raw).length > 0;
   const result = parsed.success && requested ? await planDay(input) : null;
   const items = result?.ok ? result.items : result?.best ?? [];
@@ -48,6 +52,10 @@ export default async function PlanPage({ searchParams }: { searchParams: Promise
         <label className="text-sm font-medium">{t("planTransport")}<select className={field} name="transport" defaultValue={input.transport}><option value="transit">{t("planTransit")}</option><option value="car">{t("planCar")}</option><option value="walk">{t("planWalk")}</option></select></label>
         <label className="text-sm font-medium">{t("planTravelLimit")}<input className={field} type="number" name="maxTravelMin" required min={0} max={240} defaultValue={input.maxTravelMin} /></label>
       </div>
+      {categories.length > 0 && <fieldset className="mt-5"><legend className="text-sm font-medium">{t("planTypes")}</legend>
+        <div className="mt-2 flex flex-wrap gap-2">{categories.map((c) => <label key={c.slug} className="inline-flex cursor-pointer items-center gap-2 rounded-full bg-stone-50 px-3.5 py-2 text-sm ring-1 ring-black/10 has-[:checked]:bg-[var(--brand)]/10 has-[:checked]:ring-[var(--brand)]"><input type="checkbox" name="types" value={c.slug} defaultChecked={typeChecked(c.slug)} className="accent-[var(--brand)]" />{categoryName(c.slug, c.name, lang)}</label>)}</div>
+        <p className="mt-2 text-xs text-stone-500">{t("planTypesHint")}</p>
+      </fieldset>}
       <button className="mt-6 inline-flex items-center gap-2 rounded-full bg-[var(--brand)] px-6 py-3 font-medium text-white hover:brightness-110">{t("planBuild")}<ArrowRight className="size-4" aria-hidden /></button>
     </form>
     {!parsed.success && <p role="alert" className="mt-6 rounded-xl bg-amber-50 p-4 text-amber-900">{t("planInvalid")}</p>}

@@ -22,6 +22,8 @@ export const planInputSchema = z.object({
   transport: z.enum(["transit", "car", "walk"]).default("transit"),
   maxTravelMin: z.coerce.number().int().min(0).max(240).default(40), // на один переезд
   count: z.coerce.number().int().min(2).max(4).default(3), // сколько событий хочется
+  // Типы мероприятий (слаги категорий: theatre, cinema…); пусто — все типы
+  types: z.preprocess((v) => typeof v === "string" ? (v ? v.split(",") : []) : v, z.array(z.string().trim().regex(/^[a-z0-9_-]{1,50}$/)).max(30).default([])).transform((v) => [...new Set(v)]),
   exclude: ids(100), // ранее заменённые события
   keep: ids(4), // остановки, которые должны остаться при замене или открытии общей ссылки
 }).superRefine((v, ctx) => {
@@ -92,6 +94,7 @@ async function candidates(input: PlanInput): Promise<Candidate[]> {
       startsAt: { lte: dayEnd },
       OR: [{ startsAt: { gte: dayStart } }, { endsAt: { gte: dayStart } }],
       ...(input.age != null ? { AND: [{ OR: [{ ageLimit: null }, { ageLimit: { lte: input.age } }] }] } : {}),
+      ...(input.types.length ? { category: { slug: { in: input.types } } } : {}),
     },
     include: eventInclude,
     orderBy: { startsAt: "asc" },
@@ -182,7 +185,7 @@ export async function planDay(raw: unknown): Promise<PlanResult> {
         {
           constraint: "data",
           message: `В афише на ${dayWords(input.date)} в городе ${input.city} ${cands.length ? "только одно подходящее событие" : "нет подходящих событий"}${input.age != null ? ` для возраста ${input.age}+` : ""}`,
-          fix: "выберите другой день или город",
+          fix: input.types.length ? "выберите другой день, город или больше типов мероприятий" : "выберите другой день или город",
         },
       ],
       best: cands.length ? search(cands, limits, 1).get(1)?.items : undefined,
