@@ -22,11 +22,12 @@ function endOf(dateEnd: unknown, firstSession: string): string | undefined {
 
 const PROMPT = (today: string, categories: string) => `Ты извлекаешь сведения о культурном мероприятии из текста страницы сайта учреждения Республики Башкортостан.
 Сегодня ${today}. Ответь ТОЛЬКО JSON:
-{"isEvent": boolean, "title": string, "sessions": ["YYYY-MM-DDTHH:MM", ...], "dateEnd": "YYYY-MM-DD"?, "venue": string?, "address": string?, "city": string?, "priceMin": number?, "priceMax": number?, "isFree": boolean?, "ageLimit": number?, "category": string?, "genre": string?, "description": string?, "ticketUrl": string?}
+{"isEvent": boolean, "title": string, "sessions": ["YYYY-MM-DDTHH:MM", ...], "dateEnd": "YYYY-MM-DD"?, "venue": string?, "address": string?, "city": string?, "priceMin": number?, "priceMax": number?, "isFree": boolean?, "ageLimit": number?, "category": string?, "genre": string?, "description": string?, "ticketUrl": string?, "status": "cancelled" | "rescheduled" | "sold_out" | "scheduled"?}
 Правила:
 - Только то, что прямо написано в тексте. Нет сведений — не указывай поле. Ничего не придумывай.
 - isEvent: false — если это новость, отчёт о прошедшем, вакансия, объявление без даты проведения.
 - sessions — даты и время начала (местное время); несколько сеансов — несколько значений. Дата публикации новости — НЕ дата мероприятия.
+- status указывай только при прямом сообщении: cancelled — отменено, rescheduled — перенесено (sessions — новая дата), sold_out — билетов нет, scheduled — явно объявлено возобновление/восстановление. Нет сообщения об изменении — поле пропусти. Объявление об отмене будущего события — это событие, а не обычная новость.
 - Выставка «с 1 по 30 ноября» — sessions: ["первый день T10:00"], dateEnd: последний день.
 - category — один из кодов: ${categories}.
 - genre — жанр, только если прямо назван в тексте («балет», «опера», «оперетта», «мюзикл», «комедия», «джаз»), строчными.
@@ -55,6 +56,7 @@ export async function extractEvent(text: string, link: string, fallbackCity?: st
     tags: typeof raw.genre === "string" && raw.genre.trim() ? [raw.genre.trim().toLowerCase().slice(0, 40)] : undefined,
     description: raw.description,
     ticketUrl: raw.ticketUrl,
+    status: typeof raw.status === "string" && ["cancelled", "rescheduled", "sold_out", "scheduled"].includes(raw.status) ? raw.status : undefined,
     sourceUrl: link,
   };
   return { isEvent: true, rows: sessions.map((s) => ({ ...base, dateStart: s, externalId: `${link}#${s}` })) };
@@ -62,12 +64,13 @@ export async function extractEvent(text: string, link: string, fallbackCity?: st
 
 const LIST_PROMPT = (today: string, categories: string, institution: string, city: string) => `Ты извлекаешь список культурных мероприятий из фрагмента страницы афиши учреждения Республики Башкортостан.
 Это страница учреждения «${institution}»${city ? ` (город ${city})` : ""}. Сегодня ${today}. Ответь ТОЛЬКО JSON:
-{"events": [{"title": string, "sessions": ["YYYY-MM-DDTHH:MM", ...], "dateEnd": "YYYY-MM-DD"?, "venue": string?, "address": string?, "city": string?, "priceMin": number?, "priceMax": number?, "isFree": boolean?, "ageLimit": number?, "category": string?, "genre": string?, "url": string?}]}
+{"events": [{"title": string, "sessions": ["YYYY-MM-DDTHH:MM", ...], "dateEnd": "YYYY-MM-DD"?, "venue": string?, "address": string?, "city": string?, "priceMin": number?, "priceMax": number?, "isFree": boolean?, "ageLimit": number?, "category": string?, "genre": string?, "url": string?, "status": "cancelled" | "rescheduled" | "sold_out" | "scheduled"?}]}
 Правила:
 - Только мероприятия с датой проведения, прямо указанной во фрагменте. Ничего не придумывай; нет сведений — не указывай поле.
 - Год не указан — ближайшая будущая дата. Время «19.00» — 19:00. Прошедшие даты не включай.
 - sessions — дата и время начала каждого сеанса (местное время); один спектакль в разные дни — один элемент с несколькими датами.
 - url — ссылка на страницу мероприятия из фрагмента (в тексте ссылки даны в скобках), если есть.
+- status — только при прямом сообщении об отмене (cancelled), переносе (rescheduled, sessions — новая дата), отсутствии билетов (sold_out) или возобновлении (scheduled). Нет такого сообщения — поле пропусти.
 - venue — площадка: зал без названия учреждения («Большой зал», «Камерная сцена») пиши как «${institution}, Большой зал»; другая площадка с собственным названием (ГКЗ, ДК, театр, филармония) — как есть, без «${institution}»; площадка не указана — «${institution}».
 - city — населённый пункт проведения: если в названии или тексте сказано «в Октябрьском», «в Салавате» — этот город (в именительном падеже); иначе — город учреждения.
 - category — один из кодов: ${categories}.
@@ -99,6 +102,7 @@ export async function extractEventList(text: string, pageUrl: string, fallbackCi
     for (const s of sessions) {
       rows.push({
         title: e.title,
+        status: typeof e.status === "string" && ["cancelled", "rescheduled", "sold_out", "scheduled"].includes(e.status) ? e.status : undefined,
         dateStart: s,
         dateEnd: endOf(e.dateEnd, [...sessions].sort()[0]),
         venue: e.venue ?? (institution || undefined),

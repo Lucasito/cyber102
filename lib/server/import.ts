@@ -4,6 +4,8 @@ import type { EventStatus, Prisma, Publication, SourceType } from "@/generated/p
 import { audit, diffFields } from "./audit";
 import { findDuplicate } from "./dedup";
 import { db } from "./db";
+import { queueDataChange } from "./data-changes";
+import { importVenueLocation, resolveVenue } from "./venue-registry";
 import { settlementInBashkortostan } from "./geocode";
 import { getSettings } from "./settings";
 import { categorySlug, dedupKey, inBashkortostan, normalizeCity, normalizeTitle, parseAge, parseBool, parseDate, parseDuration, parsePrice, parseTags, parseUrl, RB_SETTLEMENTS } from "./normalize";
@@ -233,16 +235,9 @@ function hashRow(r: Record<string, unknown>) {
 }
 
 /** Площадка по городу и нормализованному названию; нет — создаётся. Пустые адрес и координаты дополняются. */
-async function venueFor(tx: Prisma.TransactionClient, n: Normalized) {
-  const inCity = await tx.venue.findMany({ where: { city: n.city } });
-  const found = inCity.find((v) => normalizeTitle(v.name) === normalizeTitle(n.venue));
-  if (!found) return tx.venue.create({ data: { name: n.venue, city: n.city, address: n.address, lat: n.lat, lon: n.lon } });
-  // Примерные координаты (центр города) заменяются точными; новый адрес у такой площадки — повод поискать заново
-  const fill = {
-    ...(!found.address && n.address ? { address: n.address, ...(found.approx ? { geocodedAt: null } : {}) } : {}),
-    ...((found.lat == null || found.approx) && n.lat != null ? { lat: n.lat, lon: n.lon, approx: false } : {}),
-  };
-  return Object.keys(fill).length ? tx.venue.update({ where: { id: found.id }, data: fill }) : found;
+async function venueFor(tx: Prisma.TransactionClient, n: Normalized, source: string) {
+  const venue = await resolveVenue(tx, n.venue, n.city);
+  return importVenueLocation(tx, venue, n, source, n.sourceUrl);
 }
 
 /** Поля, которые другой источник может дополнить, если у события они пустые. */
@@ -322,7 +317,7 @@ export async function importRows(rows: Record<string, unknown>[], opts: ImportOp
     try {
       // Та же строка уже загружалась и стала событием — ничего не делаем (идемпотентность)
       const known = await db.rawRecord.findUnique({ where: { source_hash: { source, hash } } });
-      if (known?.eventId && (await db.event.count({ where: { id: known.eventId } }))) {
+      if (known?.eventId && !opts.verifyLinks && (await db.event.count({ where: { id: known.eventId } }))) {
         report.push({ row: rowNo, result: "unchanged", eventId: known.eventId, reason: "строка уже загружалась" });
         continue;
       }
@@ -360,12 +355,22 @@ export async function importRows(rows: Record<string, unknown>[], opts: ImportOp
 
       const key = dedupKey(n.title, n.startsAt, n.venue, n.city);
       const result = await db.$transaction(async (tx) => {
-        const venue = await venueFor(tx, n);
+        const venue = await venueFor(tx, n, source);
+        const canonicalKey = dedupKey(n.title, n.startsAt, venue.name, venue.city);
         // Своё событие источника: по externalId (переживает перенос даты) или по ключу дедупликации
-        const bySource = n.externalId ? await tx.eventSource.findFirst({ where: { source, externalId: n.externalId }, select: { eventId: true } }) : null;
+        const sameExternal = n.externalId ? await tx.eventSource.findMany({ where: { source, externalId: n.externalId }, select: { eventId: true, event: { select: { startsAt: true } } } }) : [];
+        const rowsAtUrl = rows.filter((r) => { const m = mapRow(r); return m.sourceUrl === n.sourceUrl && normalizeTitle(String(m.title ?? "")) === n.normalizedTitle; }).length;
+        const sameTime = sameExternal.find((s) => s.event.startsAt.getTime() === n.startsAt.getTime());
+        let bySource: { eventId: string } | null = sameTime ?? (sameExternal.length === 1 && rowsAtUrl === 1 ? sameExternal[0] : null);
+        // Перенос при старом формате externalId (включал дату): только однозначная карточка источника.
+        if (!bySource) {
+          const sameUrl = await tx.eventSource.findMany({ where: { source, url: n.sourceUrl, event: { normalizedTitle: n.normalizedTitle, status: { not: "PAST" } } }, select: { eventId: true } });
+          const ids = [...new Set(sameUrl.map((s) => s.eventId))];
+          if (ids.length === 1 && rowsAtUrl === 1) bySource = { eventId: ids[0] };
+        }
         let existing = bySource
           ? await tx.event.findUnique({ where: { id: bySource.eventId } })
-          : await tx.event.findFirst({ where: { OR: [{ dedupKey: key }, { normalizedTitle: n.normalizedTitle, venueId: venue.id, startsAt: n.startsAt }] } });
+          : await tx.event.findFirst({ where: { OR: [{ dedupKey: canonicalKey }, { normalizedTitle: n.normalizedTitle, venueId: venue.id, startsAt: n.startsAt }] } });
         // Нечёткий поиск дубля из другого источника: «Спектакль «X»» и «X / перевод», площадка названа по-разному
         const fuzzy = existing ? null : await findDuplicate(tx, { title: n.title, startsAt: n.startsAt, endsAt: n.endsAt, city: n.city, venue: n.venue });
         if (fuzzy?.level === "same") existing = await tx.event.findUnique({ where: { id: fuzzy.id } });
@@ -385,7 +390,7 @@ export async function importRows(rows: Record<string, unknown>[], opts: ImportOp
           // Пустое значение из источника не затирает уже известное (другой источник мог быть полнее)
           endsAt: n.endsAt ?? existing?.endsAt ?? null,
           durationMin: n.durationMin ?? existing?.durationMin ?? null,
-          status: rescheduled && n.status === "SCHEDULED" ? ("RESCHEDULED" as const) : n.status,
+          status: rescheduled && n.status === "SCHEDULED" ? ("RESCHEDULED" as const) : mapped.status == null ? (existing?.status ?? n.status) : n.status,
           priceMin: n.priceMin ?? existing?.priceMin ?? null,
           priceMax: n.priceMin != null || n.priceMax != null ? n.priceMax : (existing?.priceMax ?? null),
           ageLimit: n.ageLimit ?? existing?.ageLimit ?? null,
@@ -402,16 +407,22 @@ export async function importRows(rows: Record<string, unknown>[], opts: ImportOp
 
         let eventId: string;
         let outcome: RowResult["result"];
-        if (existing && opts.review) {
-          // Недоверенные данные не меняют то, что уже есть в афише, и не добавляют к нему ссылок
-          return { eventId: existing.id, outcome: "unchanged" as const, skipped: true, mergedInto: own ? null : existing.title };
+        if (existing && (opts.review || (opts.verifyLinks && existing.publication === "PUBLISHED"))) {
+          const proposed = Object.fromEntries(EVENT_FIELDS.filter((k) => data[k] !== undefined).map((k) => [k, data[k]]));
+          const change = await queueDataChange(tx, { entity: "event", entityId: existing.id, source, url: n.sourceUrl, current: existing, proposed });
+          if (own) await tx.eventSource.updateMany({ where: { eventId: existing.id, source, url: n.sourceUrl }, data: { fetchedAt: new Date() } });
+          await tx.rawRecord.upsert({ where: { source_hash: { source, hash } },
+            create: { source, sourceType, hash, payload: raw as Prisma.InputJsonValue, importId: run.id, eventId: existing.id },
+            update: { importId: run.id, eventId: existing.id, error: null },
+          });
+          return { eventId: existing.id, outcome: "unchanged" as const, skipped: true, mergedInto: own ? null : existing.title, pending: change?.status === "pending" };
         }
         if (!existing) {
           const publication: Publication = n.draft || n.issues.length ? "DRAFT" : "PUBLISHED";
           const created = await tx.event.create({
             data: {
               ...data,
-              dedupKey: key,
+              dedupKey: canonicalKey,
               publication,
               verifiedAt: new Date(),
               confidence: opts.review ? 0.5 : n.issues.length ? 0.7 : 1,
@@ -440,7 +451,7 @@ export async function importRows(rows: Record<string, unknown>[], opts: ImportOp
           if (diff) {
             await tx.event.update({
               where: { id: existing.id },
-              data: { ...data, ...(rescheduled ? { originalStartsAt: existing.originalStartsAt ?? existing.startsAt } : {}), verifiedAt: new Date() },
+              data: { ...data, dedupKey: canonicalKey, ...(rescheduled ? { originalStartsAt: existing.originalStartsAt ?? existing.startsAt } : {}), verifiedAt: new Date() },
             });
             outcome = "updated";
             await audit({ userLogin: opts.userLogin, action: "import", entity: "event", entityId: eventId, summary: `Импорт «${opts.fileName}», строка ${rowNo}: обновлено «${n.title}»`, diff }, tx);
@@ -465,7 +476,9 @@ export async function importRows(rows: Record<string, unknown>[], opts: ImportOp
         result: result.outcome,
         eventId: result.eventId,
         title: n.title,
-        reason: result.skipped
+        reason: "pending" in result && result.pending
+          ? "изменения источника ожидают проверки: было → стало в разделе «Модерация»"
+          : result.skipped
           ? result.mergedInto
             ? `дубль события «${result.mergedInto}» из другого источника — уже есть в афише`
             : "такое событие уже есть в афише — изменения вносит модератор"

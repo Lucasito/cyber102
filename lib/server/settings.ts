@@ -79,7 +79,7 @@ export const settingsSchema = {
   /** Башкирская локализация из админки: русский текст → перевод (подменяет встроенный). */
   /** Сбор из источников: соблюдать robots.txt сайтов (выключено — страницы загружаются, даже если закрыты для роботов). */
   collect: z.object({
-    respectRobots: bool,
+    respectRobots: z.boolean().default(false),
   }),
   i18n: z.object({
     ba: z.record(z.string(), z.string().max(3000)).default({}),

@@ -111,7 +111,7 @@ export async function searchEvents(f: FilterInput) {
       ...(f.dateFrom || !f.status
         ? [{ OR: [{ startsAt: { gte: f.dateFrom ?? new Date() } }, { endsAt: { gte: f.dateFrom ?? new Date() } }] }]
         : []),
-      f.q ? { OR: [{ title: { contains: f.q, mode: "insensitive" } }, { description: { contains: f.q, mode: "insensitive" } }, { venue: { name: { contains: f.q, mode: "insensitive" } } }] } : {},
+      f.q ? { OR: [{ title: { contains: f.q, mode: "insensitive" } }, { description: { contains: f.q, mode: "insensitive" } }, { venue: { name: { contains: f.q, mode: "insensitive" } } }, { venue: { aliases: { some: { name: { contains: f.q, mode: "insensitive" } } } } }, { venue: { building: { OR: [{ name: { contains: f.q, mode: "insensitive" } }, { aliases: { some: { name: { contains: f.q, mode: "insensitive" } } } }] } } }] } : {},
       f.age != null ? { OR: [{ ageLimit: null }, { ageLimit: { lte: f.age } }] } : {},
       f.city ? { venue: { city: { equals: f.city, mode: "insensitive" } } } : {},
       box ? { venue: { ...box, approx: false } } : {}, // центр города вместо адреса — не «рядом»

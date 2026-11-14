@@ -5,6 +5,7 @@ import { geocodeVenues } from "./geocode";
 import { TZ, type EventItem } from "./events";
 import { eventLine, subscriptionDigest } from "./bot-browse";
 import { BOTS_PAUSED, getSettings } from "./settings";
+import { sendEventWatchUpdates } from "./event-watches";
 
 // Фоновые задачи (запуск — instrumentation.ts): раз в минуту.
 //  • Прошедшие события получают статус PAST — в API и админке статус соответствует действительности.
@@ -37,7 +38,7 @@ export async function sendDueReminders() {
   // Боты на паузе — напоминания не шлём и не помечаем, отправятся после включения
   if (BOTS_PAUSED) return;
   const due = await db.reminder.findMany({
-    where: { sentAt: null, remindAt: { lte: new Date() } },
+    where: { sentAt: null, remindAt: { lte: new Date() }, event: { publication: "PUBLISHED" } },
     include: { botUser: true, event: { include: { venue: true } } },
     take: 50,
   });
@@ -101,7 +102,7 @@ export async function sendSubscriptionDigests() {
 }
 
 /** Сроки хранения (ТЗ, раздел 10: персональные данные — минимум, срок хранения указан в README). */
-export const RETENTION = { dialogDays: 30, queryLogDays: 180, feedbackDays: 365 } as const;
+export const RETENTION = { dialogDays: 30, queryLogDays: 180, feedbackDays: 365, eventWatchDays: 30 } as const;
 let lastPurge = 0;
 
 /** Раз в час: диалоги неактивных пользователей ботов, старые запросы аналитики, истёкшие сессии и ссылки из писем. */
@@ -115,6 +116,10 @@ export async function purgeOldData() {
     db.queryLog.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - RETENTION.queryLogDays * day) } } }),
     db.adminSession.deleteMany({ where: { expiresAt: { lt: now } } }),
     db.adminToken.deleteMany({ where: { expiresAt: { lt: now } } }),
+    db.eventWatch.deleteMany({ where: { event: { OR: [
+      { endsAt: { lt: new Date(Date.now() - RETENTION.eventWatchDays * day) } },
+      { endsAt: null, startsAt: { lt: new Date(Date.now() - RETENTION.eventWatchDays * day) } },
+    ] } } }),
     db.feedback.deleteMany({ where: { createdAt: { lt: new Date(Date.now() - RETENTION.feedbackDays * day) } } }),
   ]);
 }
@@ -129,6 +134,10 @@ export function startJobs() {
   const tick = async () => {
     await markPastEvents().catch((e) => console.error("[jobs] статусы:", e instanceof Error ? e.message : e));
     await sendDueReminders().catch((e) => console.error("[jobs] напоминания:", e instanceof Error ? e.message : e));
+    if (!BOTS_PAUSED) await sendEventWatchUpdates(async (platform, externalId, text, links) => {
+      const send = senders.get(platform); if (!send) return false;
+      await send(externalId, text, links); return true;
+    }).catch((e) => console.error("[jobs] изменения событий:", e instanceof Error ? e.message : e));
     await purgeOldData().catch((e) => console.error("[jobs] очистка:", e instanceof Error ? e.message : e));
     await sendSubscriptionDigests().catch((e) => console.error("[jobs] подписки:", e instanceof Error ? e.message : e));
     // Координаты площадок по адресу — раз в 5 минут, понемногу (правила Nominatim)

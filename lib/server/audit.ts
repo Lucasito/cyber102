@@ -35,6 +35,7 @@ export function diffFields<T extends Record<string, unknown>>(before: Partial<T>
 
 /** Подписи полей события для журнала и интерфейса. */
 export const EVENT_FIELD_LABELS: Record<string, string> = {
+  evidence: "Подтверждение из источника",
   title: "Название",
   description: "Описание",
   startsAt: "Начало",

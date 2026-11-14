@@ -1,6 +1,7 @@
 import { headers } from "next/headers";
 import Link from "next/link";
 import { MessengerIcon } from "@/components/messenger-icon";
+import { SiteToolsNav } from "@/components/site-tools-nav";
 import { tr, type Lang } from "@/lib/i18n";
 import { botLinks } from "@/lib/server/bot-links";
 import { getLang } from "@/lib/server/lang";
@@ -39,13 +40,14 @@ export default async function SiteLayout({ children }: { children: React.ReactNo
       {site.notice && <div className="bg-stone-900 px-4 py-2 text-center text-sm text-white">{site.notice}</div>}
       <header className="sticky top-0 z-20 border-b border-black/5 bg-[#f7f6f3]/85 backdrop-blur">
         <div className="mx-auto flex h-14 max-w-6xl items-center gap-3 px-4">
-          <Link href="/" className="flex min-w-0 items-center gap-2.5 font-semibold tracking-tight">
+          <Link href="/" aria-label={tr(lang, "siteName")} className="flex min-w-0 items-center gap-2.5 font-semibold tracking-tight">
             {/* eslint-disable-next-line @next/next/no-img-element -- SVG-логотип */}
             <img src="/brand/logo.svg" alt="" className="size-8 shrink-0 rounded-lg" />
             <span className="hidden truncate md:inline">{tr(lang, "siteName")}</span>
-            <span className="truncate md:hidden">{tr(lang, "siteShort")}</span>
+            <span className="hidden truncate sm:inline md:hidden">{tr(lang, "siteShort")}</span>
           </Link>
           <div className="ml-auto flex shrink-0 items-center gap-1.5 text-sm">
+            <SiteToolsNav lang={lang} />
             {bots.length > 0 && (
               <nav className="flex items-center gap-1.5" aria-label="Боты">
                 <span className="mr-1 hidden text-stone-500 lg:inline">{tr(lang, "botsLabel")}</span>

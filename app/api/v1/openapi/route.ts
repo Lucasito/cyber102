@@ -61,6 +61,17 @@ export function GET(request: Request) {
           },
         },
       },
+      "/api/v1/events/batch": {
+        get: {
+          summary: "Публичные карточки по списку ID для избранного",
+          description: "Только чтение: профиль и список избранного на сервере не создаются. Недоступные ID возвращаются в missing; черновики не раскрываются. Кеш 30 с.",
+          parameters: [{ name: "ids", in: "query", schema: { type: "string" }, description: "До 100 ID через запятую; пустой список разрешён" }],
+          responses: {
+            "200": { description: "{ items: [CardEvent с адресом площадки], missing: [id] }" },
+            "400": err("Неверный список ID", { code: "bad_request", message: "Ожидается не больше 100 идентификаторов событий через запятую." }),
+          },
+        },
+      },
       "/api/v1/events/{id}": {
         get: {
           summary: "Событие по id",
@@ -125,7 +136,7 @@ export function GET(request: Request) {
         get: {
           summary: "Планировщик «Выходной день»: 2–4 события на день",
           description:
-            "События по времени, без пересечений, с переездами (по прямой, 20 км/ч + 10 мин) и общей стоимостью (минимальная цена × число людей). " +
+            "События по времени, без пересечений, с приблизительными переездами (transit: 20 км/ч + 10 мин, car: 25 км/ч + 10 мин, walk: 5 км/ч) и стоимостью (минимальная цена × число людей, без транспорта). " +
             "Выставки и музеи — в свободное время 10:00–18:00, посещение 90 мин. Несовместимые условия — ok: false и violations: какое условие мешает и минимальная правка.",
           parameters: [
             { name: "date", in: "query", schema: { type: "string", format: "date" }, description: "День (по умолчанию ближайшая суббота)" },
@@ -137,11 +148,14 @@ export function GET(request: Request) {
             { name: "to", in: "query", schema: { type: "string", default: "22:00" }, description: "Конец свободного окна, HH:MM" },
             { name: "maxTravelMin", in: "query", schema: { type: "integer", default: 40 }, description: "Предел одного переезда, мин" },
             { name: "count", in: "query", schema: { type: "integer", minimum: 2, maximum: 4, default: 3 } },
+            { name: "transport", in: "query", schema: { type: "string", enum: ["transit", "car", "walk"], default: "transit" } },
+            { name: "keep", in: "query", schema: { type: "string" }, description: "До четырёх ID через запятую: остановки, которые должны остаться в плане" },
+            { name: "exclude", in: "query", schema: { type: "string" }, description: "До 100 ID через запятую: исключённые события" },
           ],
           responses: {
             "200": {
               description:
-                "{ ok: true, input, items: [{ event, start, end, flexible, travelMin, cost }], totalCost, unknownPrice, travelMin, note } или { ok: false, input, violations: [{ constraint, message, fix }], best }",
+                "{ ok: true, input, items: [{ event, start, end, flexible, travelMin, cost, travelUnknown, durationEstimated }], totalCost, unknownPrice, travelMin, note } или { ok: false, input, violations: [{ constraint, message, fix }], best }",
             },
             "400": err("Неверные параметры", { code: "bad_request", message: "Неверные параметры плана", details: [{ param: "date", problem: "Invalid string" }] }),
           },

@@ -7,6 +7,7 @@ import { audit, diffFields } from "@/lib/server/audit";
 import { mergeEvents } from "@/lib/server/dedup";
 import { requireAdmin } from "@/lib/server/admin";
 import { db } from "@/lib/server/db";
+import { resolveVenue } from "@/lib/server/venue-registry";
 import { importRows, parseFile, type ImportReport } from "@/lib/server/import";
 import { dedupKey, normalizeCity, normalizeTitle, parseAge, parseDate, parsePrice, parseTags, parseUrl } from "@/lib/server/normalize";
 import type { ActionState } from "./actions";
@@ -55,12 +56,9 @@ export async function saveEvent(_: ActionState, f: FormData): Promise<ActionStat
     const duration = parseInt(text(f, "durationMin"), 10);
 
     const result = await db.$transaction(async (tx) => {
-      const inCity = await tx.venue.findMany({ where: { city } });
-      const venue =
-        inCity.find((v) => normalizeTitle(v.name) === normalizeTitle(venueName)) ??
-        (await tx.venue.create({ data: { name: venueName, city, address: text(f, "address") || null } }));
+      const venue = await resolveVenue(tx, venueName, city);
       // Новый адрес — координаты найдутся заново фоновой задачей
-      if (text(f, "address") && venue.address !== text(f, "address")) await tx.venue.update({ where: { id: venue.id }, data: { address: text(f, "address"), lat: null, lon: null, geocodedAt: null } });
+      if (text(f, "address") && venue.address !== text(f, "address")) await tx.venue.update({ where: { id: venue.id }, data: { address: text(f, "address"), lat: null, lon: null, approx: true, geocodedAt: null, locationLocked: true, locationVerifiedAt: new Date() } });
       const before = id ? await tx.event.findUniqueOrThrow({ where: { id } }) : null;
       const rescheduled = before && before.startsAt.getTime() !== startsAt.getTime();
       const data = {
@@ -89,7 +87,7 @@ export async function saveEvent(_: ActionState, f: FormData): Promise<ActionStat
         ...(rescheduled ? { originalStartsAt: before.originalStartsAt ?? before.startsAt } : {}),
       };
       if (!before) {
-        const key = dedupKey(title, startsAt, venueName, city);
+        const key = dedupKey(title, startsAt, venue.name, venue.city);
         const twin = await tx.event.findUnique({ where: { dedupKey: key }, select: { id: true } });
         if (twin) throw new Error(`Такое событие уже есть (то же название, дата и площадка): /admin/events/${twin.id}`);
         const ev = await tx.event.create({
@@ -99,7 +97,7 @@ export async function saveEvent(_: ActionState, f: FormData): Promise<ActionStat
         return { id: ev.id, message: "Событие создано" };
       }
       const diff = diffFields(before as Record<string, unknown>, data, [...EDIT_FIELDS]);
-      await tx.event.update({ where: { id }, data: { ...data, verifiedAt: new Date() } });
+      await tx.event.update({ where: { id }, data: { ...data, dedupKey: dedupKey(title, startsAt, venue.name, venue.city), verifiedAt: new Date() } });
       if (sourceUrl && !(await tx.eventSource.findFirst({ where: { eventId: id, url: sourceUrl } }))) {
         await tx.eventSource.create({ data: { eventId: id, source: "manual", sourceType: "MANUAL", url: sourceUrl } });
       }

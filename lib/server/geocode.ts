@@ -103,9 +103,16 @@ export async function geocodeVenues(limit = 5) {
   const venues = await db.venue.findMany({ where: { geocodedAt: null, OR: [{ lat: null }, { approx: true, address: { not: null } }] }, take: limit });
   let found = 0;
   for (const v of venues) {
+    if (v.locationLocked && !v.approx && v.lat != null && v.lon != null) continue;
+    const building = v.buildingId && !v.locationLocked ? await db.venue.findUnique({ where: { id: v.buildingId } }) : null;
+    if (building && !building.approx && building.lat != null && building.lon != null) {
+      await db.venue.updateMany({ where: { id: v.id, updatedAt: v.updatedAt }, data: { address: building.address, city: building.city, lat: building.lat, lon: building.lon, approx: false, geocodedAt: new Date() } });
+      found++; continue;
+    }
+    const locked = v.locationLocked || !!building?.locationLocked;
     const queries = [
       v.address ? `${v.address}, ${v.city}, Башкортостан` : null,
-      ...venueNameVariants(v.name).map((n) => `${n}, ${v.city}, Башкортостан`),
+      ...(!locked ? venueNameVariants(v.name).map((n) => `${n}, ${v.city}, Башкортостан`) : []),
     ].filter(Boolean) as string[];
     let hit: GeoResult | null = null;
     for (const q of queries) {
@@ -119,10 +126,10 @@ export async function geocodeVenues(limit = 5) {
     let approx = false;
     if (!hit && v.approx) {
       // Был центр города, по адресу не нашлось — оставляем как есть, второй раз не ищем
-      await db.venue.update({ where: { id: v.id }, data: { geocodedAt: new Date() } });
+      await db.venue.updateMany({ where: { id: v.id, updatedAt: v.updatedAt }, data: { geocodedAt: new Date() } });
       continue;
     }
-    if (!hit) {
+    if (!hit && !locked) {
       const c = await geocode(`${v.city}, Башкортостан`);
       if (c === null) return found;
       if (c.found && isBashkortostanRegion(c.region)) {
@@ -130,7 +137,7 @@ export async function geocodeVenues(limit = 5) {
         approx = true;
       }
     }
-    await db.venue.update({ where: { id: v.id }, data: { geocodedAt: new Date(), approx, ...(hit ? { lat: hit.lat, lon: hit.lon } : {}) } });
+    await db.venue.updateMany({ where: { id: v.id, updatedAt: v.updatedAt }, data: { geocodedAt: new Date(), ...(hit ? { lat: hit.lat, lon: hit.lon, approx } : {}) } });
     if (hit && !approx) found++;
   }
   if (venues.length) log("info", "geocode_venues", { checked: venues.length, found });

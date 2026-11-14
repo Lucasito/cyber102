@@ -131,11 +131,13 @@ async function venueScheduleTool(args: Record<string, unknown>, limit: number): 
     .split(/[^\p{L}\d]+/u)
     .filter((w) => w.length >= 4 && !/^(театр|музе|центр|зал|концертн)/.test(w))
     .map((w) => w.slice(0, 5));
-  let venues = await db.venue.findMany({ where: { name: { contains: venue, mode: "insensitive" } }, select: { id: true, name: true, city: true } });
+  let venues = await db.venue.findMany({ where: { OR: [{ name: { contains: venue, mode: "insensitive" } }, { aliases: { some: { name: { contains: venue, mode: "insensitive" } } } }] }, select: { id: true, name: true, city: true } });
   if (!venues.length && words.length) {
     venues = await db.venue.findMany({ where: { AND: words.map((w) => ({ name: { contains: w, mode: "insensitive" as const } })) }, select: { id: true, name: true, city: true } });
   }
   if (!venues.length) return { ok: true, data: { venues: [], events: [] }, items: [] };
+  const halls = await db.venue.findMany({ where: { buildingId: { in: venues.map((v) => v.id) } }, select: { id: true, name: true, city: true } });
+  venues = [...new Map([...venues, ...halls].map((v) => [v.id, v])).values()];
   const p = period(args);
   const from = p.dateFrom ?? new Date();
   const items = await db.event.findMany({

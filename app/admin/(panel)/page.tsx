@@ -53,6 +53,10 @@ export default async function AdminOverview() {
         </div>
       </Section>
 
+      <Link href="/admin/quality" className="block rounded-2xl bg-white px-5 py-4 text-sm ring-1 ring-black/5 hover:ring-black/20">
+        <b>Качество афиши →</b><span className="mt-1 block text-stone-500">Ближайшие события без цены, возраста, точного места или с проблемами источника.</span>
+      </Link>
+
       {isAdmin && stats && (
         <Section title="Помощник и боты">
           <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">

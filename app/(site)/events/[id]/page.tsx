@@ -5,6 +5,9 @@ import { notFound } from "next/navigation";
 import { cache } from "react";
 import { EventGrid } from "@/components/event-card";
 import { ShareButton } from "@/components/share-button";
+import { FavoriteButton } from "@/components/favorite-button";
+import { EventWatchLinks } from "@/components/event-watch-links";
+import { botLinks } from "@/lib/server/bot-links";
 import { CATEGORY_STYLE, DEFAULT_STYLE, formatDateLong, formatPrice, illustrationFor, toCard, TZ } from "@/lib/format";
 import { db } from "@/lib/server/db";
 import { searchEvents } from "@/lib/server/events";
@@ -192,7 +195,9 @@ export default async function EventPage({ params }: { params: Promise<{ id: stri
               <CalendarPlus className="size-4" /> {t("toCalendar")}
             </a>
             <ShareButton title={e.title} label={t("share")} copiedLabel={t("copied")} />
+            <FavoriteButton eventId={e.id} lang={lang} />
           </div>
+          {e.status !== "PAST" && <div className="mt-4"><EventWatchLinks eventId={e.id} bots={await botLinks()} lang={lang} /></div>}
         </div>
       </div>
 

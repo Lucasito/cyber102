@@ -106,7 +106,7 @@ export default async function Widget({ searchParams }: { searchParams: Promise<R
       {items.length ? (
         <div className={list ? "grid gap-2" : "grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]"} style={gridStyle}>
           {items.map((e) => (
-            <EventCard key={e.id} event={e} target="_blank" tile={!list} row={list} accent ageNote={!!sp.age} image={img !== "0"} lang={lang} />
+            <EventCard key={e.id} event={e} target="_blank" tile={!list} row={list} accent ageNote={!!sp.age} image={img !== "0"} lang={lang} saveable={false} />
           ))}
         </div>
       ) : (

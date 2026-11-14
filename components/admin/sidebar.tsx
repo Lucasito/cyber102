@@ -30,6 +30,7 @@ const GROUPS: { title: string; items: Item[] }[] = [
       { href: "/admin", label: "Обзор", icon: LayoutDashboard, roles: ["ADMIN", "MODERATOR"] },
       { href: "/admin/events", label: "События", icon: CalendarDays, roles: ["ADMIN", "MODERATOR"] },
       { href: "/admin/moderation", label: "Модерация", icon: ShieldCheck, roles: ["ADMIN", "MODERATOR"] },
+      { href: "/admin/quality", label: "Качество афиши", icon: ListTree, roles: ["ADMIN", "MODERATOR"] },
       { href: "/admin/import", label: "Импорт", icon: FileUp, roles: ["ADMIN", "MODERATOR"] },
       { href: "/admin/sources", label: "Источники", icon: Rss, roles: ["ADMIN", "MODERATOR"] },
       { href: "/admin/venues", label: "Площадки", icon: MapPin, roles: ["ADMIN", "MODERATOR"] },

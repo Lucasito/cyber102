@@ -11,6 +11,14 @@ const MAX_BYTES = 3 * 1024 * 1024;
 
 export class FetchError extends Error {}
 
+export type PageCache = Map<string, Promise<Awaited<ReturnType<typeof fetchText>>>>;
+/** Повторный разбор в одном обходе использует уже загруженную страницу, включая неудачные попытки. */
+export function cachedPage(pages: PageCache, url: string, options: Parameters<typeof fetchText>[1] = { accept: "text/html" }) {
+  let page = pages.get(url);
+  if (!page) { page = fetchText(url, options); pages.set(url, page); }
+  return page;
+}
+
 /**
  * Текст по адресу (http/https). Ответ больше 3 МБ, не 2xx или дольше timeoutMs — ошибка.
  * robots — соблюдать robots.txt сайта (сборщик); проверка ленты по просьбе владельца сайта — без него.

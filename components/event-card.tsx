@@ -1,5 +1,6 @@
 import { CATEGORY_STYLE, DEFAULT_STYLE, formatDistance, groupSessions, illustrationFor, type CardEvent } from "@/lib/format";
 import { categoryName, dayPartsL, formatPriceL, statusLabel, tr, type Lang } from "@/lib/i18n";
+import { FavoriteButton } from "./favorite-button";
 
 /**
  * Карточка события. На телефоне — компактная строка с миниатюрой, с sm — плитка.
@@ -14,6 +15,7 @@ export function EventCard({
   accent = false,
   ageNote = false,
   image = true,
+  saveable = true,
 }: {
   event: CardEvent;
   target?: string;
@@ -26,6 +28,7 @@ export function EventCard({
   ageNote?: boolean;
   /** Виджет: без картинки — компактная карточка, дата текстом */
   image?: boolean;
+  saveable?: boolean;
 }) {
   // Идёт прямо сейчас. Многодневное (выставка) — показываем дату окончания «до 11 дек»; короткое — свою дату
   const now = new Date();
@@ -47,10 +50,11 @@ export function EventCard({
   const stripe = accent ? (tile ? "border-t-4 border-[var(--brand)]" : "border-l-4 border-[var(--brand)]") : "";
   const accentText = accent ? "text-[var(--brand)]" : "text-stone-900";
   return (
+    <div className="relative min-w-0">
     <a
       href={`/events/${e.id}`}
       target={target}
-      className={`group flex flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-black/5 transition hover:shadow-lg hover:shadow-black/5 sm:hover:-translate-y-0.5 ${row} ${stripe} ${inactive ? "opacity-55" : ""}`}
+      className={`group flex h-full flex-col overflow-hidden rounded-2xl bg-white ring-1 ring-black/5 transition hover:shadow-lg hover:shadow-black/5 sm:hover:-translate-y-0.5 ${row} ${stripe} ${inactive ? "opacity-55" : ""}`}
     >
       {image && <div className={`relative shrink-0 overflow-hidden ${style} ${tile ? "aspect-[16/9]" : compact ? "w-24" : "aspect-[16/9] max-sm:aspect-auto max-sm:w-24"}`}>
         {e.imageUrl ? (
@@ -90,12 +94,14 @@ export function EventCard({
             {e.distanceKm != null && <span className="font-medium text-[var(--brand)]"> · {formatDistance(e.distanceKm)}</span>}
           </p>
         )}
-        <p className={`mt-auto flex items-center gap-2 pt-1.5 text-sm font-semibold ${accentText}`}>
+        <p className={`mt-auto flex flex-wrap items-center gap-2 pt-1.5 text-sm font-semibold ${saveable ? "pr-10" : ""} ${accentText}`}>
           {formatPriceL(e, lang)}
           {status && <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-900">{status}</span>}
         </p>
       </div>
     </a>
+    {saveable && <div className="absolute right-3 bottom-3"><FavoriteButton eventId={e.id} compact lang={lang} /></div>}
+    </div>
   );
 }
 

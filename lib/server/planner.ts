@@ -2,22 +2,31 @@ import "server-only";
 import { z } from "zod";
 import { db } from "./db";
 import { distanceKm, eventInclude, localDay, TZ, type EventItem } from "./events";
+import { EVENT_ID } from "../favorites";
 
 // Планировщик «Выходной день» (ТЗ, уровень 4): 2–4 события на один день, по времени, без пересечений,
 // с оценкой переездов и общей стоимостью. Перебор с отсечениями — без модели: план проверяем и воспроизводим.
 // Если условия несовместимы — какое ограничение нарушено и минимальная правка (поднять бюджет, расширить окно,
 // разрешить переезд дольше, убрать событие).
 
+const ids = (max: number) => z.preprocess((v) => typeof v === "string" ? (v ? v.split(",") : []) : v, z.array(z.string().regex(EVENT_ID)).max(max).default([])).transform((v) => [...new Set(v)]);
+const clock = z.string().regex(/^(?:[01]?\d|2[0-3]):[0-5]\d$/);
 export const planInputSchema = z.object({
-  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/), // день по местному времени
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).refine((v) => { const d = new Date(`${v}T00:00:00Z`); return !isNaN(d.getTime()) && d.toISOString().slice(0, 10) === v; }, "Несуществующая дата"),
   city: z.string().trim().min(1).max(100).default("Уфа"),
   budget: z.coerce.number().int().min(0).max(1_000_000).optional(), // на всех, ₽; нет — без ограничения
   persons: z.coerce.number().int().min(1).max(20).default(1),
   age: z.coerce.number().int().min(0).max(18).optional(), // младший участник: события с ageLimit ≤ age
-  from: z.string().regex(/^\d{1,2}:\d{2}$/).default("10:00"), // свободное окно
-  to: z.string().regex(/^\d{1,2}:\d{2}$/).default("22:00"),
+  from: clock.default("10:00"), // свободное окно
+  to: clock.default("22:00"),
+  transport: z.enum(["transit", "car", "walk"]).default("transit"),
   maxTravelMin: z.coerce.number().int().min(0).max(240).default(40), // на один переезд
   count: z.coerce.number().int().min(2).max(4).default(3), // сколько событий хочется
+  exclude: ids(100), // ранее заменённые события
+  keep: ids(4), // остановки, которые должны остаться при замене или открытии общей ссылки
+}).superRefine((v, ctx) => {
+  if (v.keep.length > v.count) ctx.addIssue({ code: "custom", path: ["keep"], message: "Сохранённых остановок больше, чем событий в плане" });
+  if (v.keep.some((id) => v.exclude.includes(id))) ctx.addIssue({ code: "custom", path: ["keep"], message: "Событие одновременно сохранено и исключено" });
 });
 export type PlanInput = z.infer<typeof planInputSchema>;
 
@@ -28,6 +37,8 @@ export type PlanItem = {
   flexible: boolean; // выставка или музей: время посещения выбрано планировщиком
   travelMin: number; // переезд от предыдущего события
   cost: number | null; // на всех; null — цена не указана
+  travelUnknown: boolean;
+  durationEstimated: boolean;
 };
 
 export type PlanViolation = { constraint: "budget" | "window" | "travel" | "count" | "data"; message: string; fix: string };
@@ -37,8 +48,7 @@ export type PlanResult =
   | { ok: false; violations: PlanViolation[]; input: PlanInput; best?: PlanItem[] };
 
 /** Скорость по городу с остановками и пробками; плюс время на выход-вход. */
-const CITY_KMH = 20;
-const TRANSFER_OVERHEAD_MIN = 10;
+const TRAVEL = { transit: { kmh: 20, overhead: 10 }, car: { kmh: 25, overhead: 10 }, walk: { kmh: 5, overhead: 0 } };
 /** Посещение выставки или музея, если длительность не указана. */
 const FLEX_VISIT_MIN = 90;
 /** Музеи и выставки открыты — без расписания работы в данных берём типичное. */
@@ -50,16 +60,23 @@ const at = (date: string, hm: string) => new Date(`${date}T${hm.padStart(5, "0")
 const hm = (d: Date) => d.toLocaleTimeString("ru-RU", { timeZone: TZ, hour: "2-digit", minute: "2-digit" });
 const minutes = (ms: number) => Math.round(ms / 60_000);
 
-type Candidate = { event: EventItem; flexible: boolean; start: Date; end: Date; durMin: number; cost: number | null };
+type Candidate = { event: EventItem; flexible: boolean; start: Date; end: Date; durMin: number; cost: number | null; durationEstimated: boolean };
 
 /** Переезд между площадками, мин: по прямой со скоростью по городу; та же площадка — 0; нет координат — 20. */
-function travel(a: EventItem, b: EventItem) {
-  if (a.venueId && a.venueId === b.venueId) return 0;
+function sameBuilding(a: EventItem, b: EventItem) {
+  return !!a.venueId && (a.venue?.buildingId ?? a.venueId) === (b.venue?.buildingId ?? b.venueId);
+}
+function travelUnknown(a: EventItem, b: EventItem) {
+  return !sameBuilding(a, b) && (a.venue?.lat == null || a.venue.lon == null || b.venue?.lat == null || b.venue.lon == null || a.venue.approx || b.venue.approx);
+}
+function travel(a: EventItem, b: EventItem, transport: PlanInput["transport"]) {
+  if (sameBuilding(a, b)) return 0;
   const va = a.venue;
   const vb = b.venue;
   // Нет координат или они приблизительные (центр города) — средний переезд по городу
   if (va?.lat == null || va.lon == null || vb?.lat == null || vb.lon == null || va.approx || vb.approx) return 20;
-  return Math.round((distanceKm({ lat: va.lat, lon: va.lon }, { lat: vb.lat, lon: vb.lon }) / CITY_KMH) * 60) + TRANSFER_OVERHEAD_MIN;
+  const mode = TRAVEL[transport];
+  return Math.ceil((distanceKm({ lat: va.lat, lon: va.lon }, { lat: vb.lat, lon: vb.lon }) / mode.kmh) * 60) + mode.overhead;
 }
 
 /** События дня в городе: идущие в этот день по расписанию и открытые выставки (время подберём сами). */
@@ -70,6 +87,7 @@ async function candidates(input: PlanInput): Promise<Candidate[]> {
     where: {
       status: { notIn: ["PAST", "CANCELLED", "SOLD_OUT"] },
       publication: "PUBLISHED",
+      id: { notIn: input.exclude },
       venue: { city: { equals: input.city, mode: "insensitive" } },
       startsAt: { lte: dayEnd },
       OR: [{ startsAt: { gte: dayStart } }, { endsAt: { gte: dayStart } }],
@@ -83,18 +101,18 @@ async function candidates(input: PlanInput): Promise<Candidate[]> {
   for (const e of rows) {
     const item: EventItem = { ...e, distanceKm: null };
     const cost = e.priceMin == null ? null : e.priceMin * input.persons;
-    const end = e.endsAt ?? new Date(e.startsAt.getTime() + 2 * 3_600_000);
+    const end = e.endsAt ?? new Date(e.startsAt.getTime() + (e.durationMin ?? 120) * 60_000);
     const multiDay = end.getTime() - e.startsAt.getTime() > 12 * 3_600_000;
     if (multiDay) {
-      out.push({ event: item, flexible: true, start: at(input.date, OPEN), end: at(input.date, CLOSE), durMin: e.durationMin ?? FLEX_VISIT_MIN, cost });
+      out.push({ event: item, flexible: true, start: at(input.date, OPEN), end: at(input.date, CLOSE), durMin: e.durationMin ?? FLEX_VISIT_MIN, cost, durationEstimated: e.durationMin == null });
     } else if (e.startsAt >= dayStart) {
-      out.push({ event: item, flexible: false, start: e.startsAt, end, durMin: minutes(end.getTime() - e.startsAt.getTime()), cost });
+      out.push({ event: item, flexible: false, start: e.startsAt, end, durMin: minutes(end.getTime() - e.startsAt.getTime()), cost, durationEstimated: !e.endsAt && !e.durationMin });
     }
   }
-  return out.slice(0, MAX_CANDIDATES);
+  return out.sort((a, b) => Number(input.keep.includes(b.event.id)) - Number(input.keep.includes(a.event.id))).slice(0, MAX_CANDIDATES);
 }
 
-type Limits = { budget: number; from: Date; to: Date; maxTravelMin: number };
+type Limits = { budget: number; from: Date; to: Date; maxTravelMin: number; transport: PlanInput["transport"]; keep: string[] };
 
 /**
  * Лучшие планы перебором: больше событий (до count), затем меньше в дороге, затем дешевле.
@@ -108,7 +126,7 @@ function search(cands: Candidate[], limits: Limits, count: number) {
     !b || a.flex < b.flex || (a.flex === b.flex && (a.travel < b.travel || (a.travel === b.travel && a.cost < b.cost)));
   const used = new Set<string>();
   const walk = (plan: PlanItem[], cost: number, travelSum: number) => {
-    if (plan.length >= 1) {
+    if (plan.length >= 1 && limits.keep.every((id) => used.has(id))) {
       const cur = best.get(plan.length);
       const score = { flex: plan.filter((p) => p.flexible).length, travel: travelSum, cost };
       if (better(score, cur)) best.set(plan.length, { items: [...plan], ...score });
@@ -117,7 +135,7 @@ function search(cands: Candidate[], limits: Limits, count: number) {
     const last = plan.at(-1);
     for (const c of cands) {
       if (used.has(c.event.id)) continue;
-      const tr = last ? travel(last.event, c.event) : 0;
+      const tr = last ? travel(last.event, c.event, limits.transport) : 0;
       if (last && tr > limits.maxTravelMin) continue;
       const ready = new Date(Math.max(limits.from.getTime(), last ? last.end.getTime() + tr * 60_000 : 0));
       let start: Date;
@@ -136,7 +154,7 @@ function search(cands: Candidate[], limits: Limits, count: number) {
       if (cost + add > limits.budget) continue;
       // Порядок по времени: следующее событие начинается не раньше конца предыдущего (с переездом) — выполняется выше
       used.add(c.event.id);
-      plan.push({ event: c.event, start, end, flexible: c.flexible, travelMin: tr, cost: c.cost });
+      plan.push({ event: c.event, start, end, flexible: c.flexible, travelMin: tr, cost: c.cost, travelUnknown: last ? travelUnknown(last.event, c.event) : false, durationEstimated: c.durationEstimated });
       walk(plan, cost + add, travelSum + tr);
       plan.pop();
       used.delete(c.event.id);
@@ -150,7 +168,9 @@ function search(cands: Candidate[], limits: Limits, count: number) {
 export async function planDay(raw: unknown): Promise<PlanResult> {
   const input = planInputSchema.parse(raw);
   const cands = await candidates(input);
-  const limits: Limits = { budget: input.budget ?? Infinity, from: at(input.date, input.from), to: at(input.date, input.to), maxTravelMin: input.maxTravelMin };
+  const from = at(input.date, input.from);
+  const limits: Limits = { budget: input.budget ?? Infinity, from: input.date === localDay(0) && from < new Date() ? new Date() : from, to: at(input.date, input.to), maxTravelMin: input.maxTravelMin, transport: input.transport, keep: input.keep };
+  if (input.keep.some((id) => !cands.some((c) => c.event.id === id))) return { ok: false, input, violations: [{ constraint: "data", message: "Одно из выбранных событий больше не подходит под условия: оно изменилось, отменено или недоступно", fix: "подобрать маршрут заново" }] };
   if (limits.to <= limits.from) {
     return { ok: false, input, violations: [{ constraint: "window", message: `Окно ${input.from}–${input.to} пустое`, fix: "укажите время начала раньше времени окончания" }] };
   }
@@ -170,6 +190,7 @@ export async function planDay(raw: unknown): Promise<PlanResult> {
   }
 
   const found = search(cands, limits, input.count);
+  if (input.keep.length && !found.has(input.count)) return { ok: false, input, violations: [{ constraint: "count", message: "Замена не нашлась при сохранении остальных остановок", fix: "изменить условия или подобрать маршрут заново" }], best: found.get(input.keep.length)?.items };
   const sizes = [...found.keys()].filter((n) => n >= 2).sort((a, b) => b - a);
   if (sizes.length) {
     const plan = found.get(sizes[0])!;

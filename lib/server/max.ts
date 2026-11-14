@@ -119,8 +119,8 @@ export async function handleMaxUpdate(update: MaxUpdate) {
   const greeting = (await getSettings("max")).greeting || DEFAULT_BOT_GREETING;
   if (update.update_type === "bot_started" && "user" in update) {
     const userId = String(update.user.user_id);
-    await touchBotUser("max", userId);
-    await sendMaxReply(userId, greetingReply(greeting));
+    if (typeof update.payload === "string" && /^watch_[a-zA-Z0-9_-]{1,58}$/.test(update.payload)) await sendMaxReply(userId, await botAnswer("max", userId, `/start ${update.payload}`, greeting));
+    else { await touchBotUser("max", userId); await sendMaxReply(userId, greetingReply(greeting)); }
     return;
   }
   let sender: MaxUser | undefined;

@@ -152,8 +152,11 @@ export async function scanDuplicates(limit = 50) {
  * напоминания переносятся, дубль удаляется. Возвращает названия для журнала.
  */
 export async function mergeEvents(keepId: string, dropId: string) {
+  return db.$transaction((tx) => mergeEventsInTransaction(tx, keepId, dropId));
+}
+
+export async function mergeEventsInTransaction(tx: Prisma.TransactionClient, keepId: string, dropId: string) {
   if (keepId === dropId) throw new Error("Нельзя объединить событие само с собой");
-  return db.$transaction(async (tx) => {
     const keep = await tx.event.findUniqueOrThrow({ where: { id: keepId }, include: { sources: true } });
     const drop = await tx.event.findUniqueOrThrow({ where: { id: dropId }, include: { sources: true } });
     for (const s of drop.sources) {
@@ -175,8 +178,15 @@ export async function mergeEvents(keepId: string, dropId: string) {
       if (has) await tx.reminder.delete({ where: { id: r.id } });
       else await tx.reminder.update({ where: { id: r.id }, data: { eventId: keep.id } });
     }
+    for (const w of await tx.eventWatch.findMany({ where: { eventId: drop.id } })) {
+      const exists = await tx.eventWatch.findUnique({ where: { botUserId_eventId: { botUserId: w.botUserId, eventId: keep.id } } });
+      if (exists) await tx.eventWatch.delete({ where: { id: w.id } });
+      else await tx.eventWatch.update({ where: { id: w.id }, data: { eventId: keep.id } });
+    }
     await tx.event.updateMany({ where: { possibleDuplicateId: drop.id }, data: { possibleDuplicateId: keep.id } });
+    await tx.rawRecord.updateMany({ where: { eventId: drop.id }, data: { eventId: keep.id } });
+    await tx.sourceItem.updateMany({ where: { eventId: drop.id }, data: { eventId: keep.id } });
+    await tx.dataChange.updateMany({ where: { entity: "event", entityId: drop.id, status: "pending" }, data: { status: "superseded" } });
     await tx.event.delete({ where: { id: drop.id } });
     return { keepTitle: keep.title, dropTitle: drop.title };
-  });
 }

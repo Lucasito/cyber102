@@ -58,10 +58,51 @@ model Venue {
   lon        Float?
   geocodedAt DateTime? // когда искали координаты по адресу (найдены или нет) — чтобы не повторять
   approx     Boolean   @default(false) // координаты — центр города: точный адрес не найден (на карте — «адрес уточняется»)
+  locationLocked Boolean @default(false) // адрес, город и координаты меняет только модератор
+  locationVerifiedAt DateTime?
+  updatedAt DateTime @updatedAt
+  buildingId String?
+  building Venue? @relation("VenueHalls", fields: [buildingId], references: [id], onDelete: Restrict)
+  halls Venue[] @relation("VenueHalls")
+  aliases VenueAlias[]
   events     Event[]
 
   @@unique([name, city])
   @@index([city])
+  @@index([buildingId])
+}
+
+/** Название и город в источнике → подтверждённая площадка, в том числе после исправления города. */
+model VenueAlias {
+  id String @id @default(cuid())
+  name String
+  key String
+  city String
+  cityKey String
+  venueId String
+  venue Venue @relation(fields: [venueId], references: [id], onDelete: Cascade)
+
+  @@unique([key, cityKey])
+  @@index([venueId])
+}
+
+/** Изменения опубликованных событий и защищённых адресов: применяются только после проверки. */
+model DataChange {
+  id String @id @default(cuid())
+  entity String // event | venue
+  entityId String
+  source String
+  url String?
+  before Json
+  after Json
+  fingerprint String @unique
+  status String @default("pending") // pending | accepted | rejected | superseded
+  reviewedBy String?
+  reviewedAt DateTime?
+  createdAt DateTime @default(now())
+
+  @@index([status, createdAt])
+  @@index([entity, entityId])
 }
 
 model Event {
@@ -100,6 +141,7 @@ model Event {
   venue               Venue?        @relation(fields: [venueId], references: [id])
   sources             EventSource[]
   reminders           Reminder[]
+  watches             EventWatch[]
   createdAt           DateTime      @default(now())
   updatedAt           DateTime      @updatedAt
 
@@ -139,6 +181,7 @@ model BotUser {
   browse        Json? // фильтры поиска кнопками: город, категория, даты, цена, страница
   messages      Int            @default(0)
   reminders     Reminder[]
+  watches       EventWatch[]
   subscriptions Subscription[]
   createdAt     DateTime       @default(now())
   lastSeenAt    DateTime       @default(now())
@@ -170,6 +213,22 @@ model Reminder {
 
   @@unique([botUserId, eventId])
   @@index([sentAt, remindAt])
+}
+
+/** Добровольное отслеживание изменений события в боте. Браузерное избранное в БД не хранится. */
+model EventWatch {
+  id String @id @default(cuid())
+  botUserId String
+  botUser BotUser @relation(fields: [botUserId], references: [id], onDelete: Cascade)
+  eventId String
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  lastState Json
+  checkedAt DateTime @default(now())
+  createdAt DateTime @default(now())
+
+  @@unique([botUserId, eventId])
+  @@index([checkedAt])
+  @@index([eventId])
 }
 
 /**
@@ -412,6 +471,9 @@ model SourceItem {
   status    String // imported | rejected | error
   reason    String?
   eventId   String?
+  contentHash String? // хеш записи ленты и содержимого страницы; GUID сам по себе не означает неизменность
+  feedHash String?
+  checkedAt DateTime?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 

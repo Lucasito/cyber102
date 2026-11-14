@@ -7,6 +7,7 @@ import { TZ } from "./events";
 import { reminderTime } from "./jobs";
 import { rateLimit } from "./rate-limit";
 import { DEFAULT_BOT_GREETING, getSettings } from "./settings";
+import { subscribeToEvent } from "./event-watches";
 
 // Общая логика ботов (MAX, Telegram): приветствие, меню, диалог с ИИ-агентом, напоминания, лимиты.
 // Платформенные модули только отображают BotReply своими средствами (кнопки, клавиатуры).
@@ -47,6 +48,7 @@ export const BOT_COMMANDS = [
   { command: "subs", description: "Мои подписки", query: null },
   { command: "unsubscribe", description: "Отписаться от всех", query: null },
   { command: "reminders", description: "Мои напоминания", query: null },
+  { command: "watches", description: "Изменения сохранённых событий", query: null },
   { command: "cancel", description: "Сбросить поиск", query: null },
   { command: "help", description: "Как пользоваться", query: null },
 ] as const;
@@ -91,7 +93,7 @@ const eventUrl = (id: string) => `${process.env.PUBLIC_URL ?? ""}/events/${id}`;
 // ───────── Напоминания ─────────
 
 async function remind(botUserId: string, eventId: string): Promise<BotReply> {
-  const event = await db.event.findUnique({ where: { id: eventId } });
+  const event = await db.event.findFirst({ where: { id: eventId, publication: "PUBLISHED" } });
   if (!event) return { text: "Событие не найдено — возможно, его убрали из афиши.", links: [], suggestions: [] };
   const T = await getSettings("tuning");
   const at = reminderTime(event, new Date(), T);
@@ -125,6 +127,26 @@ async function listReminders(botUserId: string): Promise<BotReply> {
   };
 }
 
+async function eventWatchReply(botUserId: string, eventId: string, confirmed: boolean): Promise<BotReply> {
+  if (confirmed) {
+    try {
+      const { event, existing } = await subscribeToEvent(botUserId, eventId);
+      return { text: `${existing ? "Уже отслеживаю" : "Буду отслеживать"} изменения «${event.title}»: дату, отмену, площадку и цену. Отписаться — /watches.`, links: [{ title: event.title, url: eventUrl(event.id) }], suggestions: [], actions: [{ label: "Мои подписки на изменения", command: "/watches" }] };
+    } catch (e) { return { text: e instanceof Error ? e.message : "Не удалось оформить подписку", links: [], suggestions: [] }; }
+  }
+  const event = await db.event.findFirst({ where: { id: eventId, publication: "PUBLISHED" } });
+  if (!event || event.status === "PAST" || (event.endsAt ?? event.startsAt) < new Date()) return { text: "Событие больше не доступно для отслеживания.", links: [], suggestions: [] };
+  return { text: `Уведомлять об изменениях «${event.title}»?\nПришлю сообщение при переносе, отмене, смене площадки или цены. Регулярной рассылки не будет. Отписаться можно командой /watches.`, links: [{ title: event.title, url: eventUrl(event.id) }], suggestions: [],
+    buttons: [[{ label: "Да, уведомлять об изменениях", command: `/watch ${eventId} yes` }], [{ label: "Нет, вернуться в меню", command: "/menu" }]] };
+}
+
+async function listEventWatches(botUserId: string): Promise<BotReply> {
+  const watches = await db.eventWatch.findMany({ where: { botUserId }, include: { event: { select: { title: true, publication: true } } }, orderBy: { createdAt: "desc" }, take: 100 });
+  if (!watches.length) return { text: "Подписок на изменения нет. В избранном на сайте выберите «Уведомлять об изменениях» или нажмите эту кнопку в карточке события в боте.", links: [], suggestions: [], buttons: MAIN_MENU };
+  return { text: `Слежу за изменениями ${watches.length} событий. Нажмите на событие ниже, чтобы отписаться. От всех подписок — /unsubscribe.`, links: [], suggestions: [],
+    actions: watches.map((w) => ({ label: `✕ ${w.event.publication === "PUBLISHED" ? w.event.title.slice(0, 45) : "Событие снято с публикации"}`, command: `/unwatch ${w.eventId}` })) };
+}
+
 // ───────── Ответ на сообщение ─────────
 
 /**
@@ -135,6 +157,14 @@ export async function botAnswer(platform: Platform, externalId: string, rawText:
   const user = await touchBotUser(platform, externalId);
   const text = commandToQuery(rawText.trim()).slice(0, 1000);
   const T0 = await getSettings("tuning");
+  const watchStart = text.match(/^\/start\s+watch_([a-zA-Z0-9_-]{1,58})$/);
+  const watch = text.match(/^\/watch\s+([a-zA-Z0-9_-]{1,64})(?:\s+(yes))?$/);
+  if (watchStart) return eventWatchReply(user.id, watchStart[1], false);
+  if (watch) return eventWatchReply(user.id, watch[1], watch[2] === "yes");
+  const unwatch = text.match(/^\/unwatch\s+([a-zA-Z0-9_-]{1,64})$/);
+  if (unwatch) { await db.eventWatch.deleteMany({ where: { botUserId: user.id, eventId: unwatch[1] } }); return listEventWatches(user.id); }
+  if (text === "/watches") return listEventWatches(user.id);
+  if (text === "/unsubscribe") await db.eventWatch.deleteMany({ where: { botUserId: user.id } });
   if (location || text === NO_LOCATION) {
     const dialog = (user.dialog as ChatMessage[] | null) ?? [];
     const lastUser = dialog.map((m) => m.role).lastIndexOf("user");

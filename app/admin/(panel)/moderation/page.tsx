@@ -2,6 +2,7 @@ import Link from "next/link";
 import { PageTitle, Section } from "@/components/admin/blocks";
 import { EventBadges, fmtDateTime } from "@/components/admin/event-badges";
 import { ActionButton } from "@/components/admin/ui";
+import { DataChanges } from "@/components/admin/data-changes";
 import { requireAdmin } from "@/lib/server/admin";
 import { db } from "@/lib/server/db";
 import { scanDuplicates } from "@/lib/server/dedup";
@@ -49,6 +50,7 @@ export default async function AdminModeration() {
         title="Модерация"
         desc="Спорные карточки ждут проверки и на сайте не видны. Одобрить — опубликовать; отклонить — оставить черновиком. Поправить поля — в карточке события. Похожие события из разных источников — объединить в одну карточку."
       />
+      <DataChanges />
       <Section>
         {items.length ? (
           <ul className="divide-y divide-black/5">

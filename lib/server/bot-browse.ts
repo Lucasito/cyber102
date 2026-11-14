@@ -70,6 +70,7 @@ export const HELP_TEXT = [
   "Команды: /menu — меню, /today, /weekend, /free, /plan — план на выходной, /subs — подписки, /unsubscribe — отписаться от всех, /reminders — напоминания, /cancel — сбросить поиск, /help — эта справка.",
   "",
   "Подписка присылает новые события выбранного города и категории не чаще раза в день.",
+  "Изменения сохранённых событий — /watches: переносы, отмены, смена площадки и цены. Подписка оформляется отдельным подтверждением.",
 ].join("\n");
 
 async function load(botUserId: string): Promise<Browse> {
@@ -247,7 +248,7 @@ async function card(id: string): Promise<BrowseReply> {
   ];
   return {
     text,
-    buttons: [links, [...(e.status !== "CANCELLED" && e.status !== "PAST" ? [{ label: "🔔 Напомнить", command: `/remind ${e.id}` }] : []), { label: "← К списку", command: "/list" }]],
+    buttons: [links, [...(e.status !== "CANCELLED" && e.status !== "PAST" ? [{ label: "🔔 Напомнить", command: `/remind ${e.id}` }] : []), ...(e.status !== "PAST" ? [{ label: "Изменения события", command: `/watch ${e.id}` }] : []), { label: "← К списку", command: "/list" }]],
   };
 }
 

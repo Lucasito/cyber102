@@ -29,7 +29,7 @@ export const GET = apiRoute("GET /api/v1/plan", async (request) => {
   return json({
     ok: true,
     input: r.input,
-    items: r.items.map((p) => ({ event: p.event, start: p.start, end: p.end, flexible: p.flexible, travelMin: p.travelMin, cost: p.cost })),
+    items: r.items.map((p) => ({ event: p.event, start: p.start, end: p.end, flexible: p.flexible, travelMin: p.travelMin, cost: p.cost, travelUnknown: p.travelUnknown, durationEstimated: p.durationEstimated })),
     totalCost: r.totalCost,
     unknownPrice: r.unknownPrice,
     travelMin: r.travelMin,

@@ -4,10 +4,10 @@ import { Check, Share2 } from "lucide-react";
 import { useState } from "react";
 
 /** «Поделиться»: системное меню на телефоне, копирование ссылки на компьютере. */
-export function ShareButton({ title, label, copiedLabel }: { title: string; label: string; copiedLabel: string }) {
+export function ShareButton({ title, label, copiedLabel, url: path }: { title: string; label: string; copiedLabel: string; url?: string }) {
   const [copied, setCopied] = useState(false);
   async function share() {
-    const url = window.location.href;
+    const url = path ? new URL(path, window.location.origin).toString() : window.location.href;
     if (navigator.share) {
       await navigator.share({ title, url }).catch(() => {});
       return;

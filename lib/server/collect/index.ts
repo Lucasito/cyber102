@@ -7,9 +7,13 @@ import { importRows, validateRows, type ImportReport, type ValidatedRow } from "
 import { log } from "../log";
 import { ADAPTERS } from "./adapters";
 import { extractEvent, extractEventList } from "./ai-extract";
-import { fetchText, htmlToText } from "./fetch";
+import { cachedPage, htmlToText, type PageCache } from "./fetch";
+import { enrichSourceEvents, enrichmentPass } from "./enrichment";
+import { eventDetails } from "./details";
 import { jsonLdEvents } from "./jsonld";
 import { parseFeed } from "./rss";
+import type { FeedItem } from "./rss";
+import { contentHash, RECHECK_MS, shouldRecheck } from "./recheck";
 import { applySourceVenue, prepareRows } from "./venue";
 
 // Сборщик событий из внешних источников (ТЗ 6.5, уровень 4). Источник даёт строки импорта, дальше — общий
@@ -35,10 +39,12 @@ type Collected = {
   skipped: { guid: string; title: string; link: string; reason: string }[];
   feedItems: number;
   message?: string;
+  checks?: Map<string, { title: string; link: string; contentHash: string; feedHash?: string; eventId?: string | null }>;
 };
 
 /** Строки событий из источника. dryRun у rss_ai — не больше 3 записей (разбор ИИ стоит денег). */
-async function collect(source: Source, dryRun: boolean): Promise<Collected> {
+async function collect(source: Source, dryRun: boolean, pages: PageCache = new Map()): Promise<Collected> {
+  const fetchText = (url: string, options?: Parameters<typeof cachedPage>[2]) => cachedPage(pages, url, options);
   const kind = source.kind as SourceKind;
   const withCity = (rows: Row[]) => rows.map((r) => (r.city || !source.city ? r : { ...r, city: source.city }));
   const plain = (rows: Row[], feedItems = rows.length): Collected => ({ rows: withCity(rows), rowGuid: rows.map(() => null), skipped: [], feedItems });
@@ -78,7 +84,7 @@ async function collect(source: Source, dryRun: boolean): Promise<Collected> {
       const chunks = splitChunks(htmlToText(html, 60_000, finalUrl), 4000);
       const guidOf = (c: string) => `chunk:${createHash("sha1").update(c).digest("hex").slice(0, 16)}`;
       const known = new Set(
-        (await db.sourceItem.findMany({ where: { sourceId: source.id, guid: { in: chunks.map(guidOf) } }, select: { guid: true } })).map((x) => x.guid),
+        (await db.sourceItem.findMany({ where: { sourceId: source.id, status: { not: "error" }, guid: { in: chunks.map(guidOf) } }, select: { guid: true } })).map((x) => x.guid),
       );
       const fresh = chunks.filter((c) => !known.has(guidOf(c))).slice(0, dryRun ? 2 : 10);
       const out: Collected = { rows: [], rowGuid: [], skipped: [], feedItems: chunks.length };
@@ -108,17 +114,33 @@ async function collect(source: Source, dryRun: boolean): Promise<Collected> {
     case "rss_ai": {
       const { text } = await fetchText(source.url, { accept: "application/rss+xml, application/xml" });
       const items = parseFeed(text);
-      const known = new Set(
-        (await db.sourceItem.findMany({ where: { sourceId: source.id, guid: { in: items.map((i) => i.guid) } }, select: { guid: true } })).map((x) => x.guid),
-      );
-      const fresh = items.filter((i) => !known.has(i.guid)).slice(0, dryRun ? 3 : source.maxItems);
-      const out: Collected = { rows: [], rowGuid: [], skipped: [], feedItems: items.length };
+      const known = await db.sourceItem.findMany({ where: { sourceId: source.id } });
+      const byGuid = new Map(known.map((i) => [i.guid, i]));
+      const upcoming = new Set((await db.event.findMany({ where: { id: { in: known.map((i) => i.eventId).filter((id): id is string => !!id) },
+        OR: [{ startsAt: { gte: new Date() } }, { endsAt: { gte: new Date() } }], status: { not: "PAST" } }, select: { id: true } })).map((e) => e.id));
+      const upcomingUrls = new Set((await db.eventSource.findMany({ where: { source: source.code, event: { status: { not: "PAST" },
+        OR: [{ startsAt: { gte: new Date() } }, { endsAt: { gte: new Date() } }] } }, select: { url: true } })).map((s) => s.url));
+      // Будущие события проверяем и после того, как они исчезли из короткой RSS-ленты.
+      const present = new Set(items.map((i) => i.guid));
+      const missing: FeedItem[] = known.filter((i) => !present.has(i.guid) && !i.guid.startsWith("page:") && !i.guid.startsWith("enrich:") && i.link && (upcomingUrls.has(i.link) || (i.eventId && upcoming.has(i.eventId))))
+        .map((i) => ({ guid: i.guid, title: i.title ?? "", link: i.link!, description: "", pubDate: null, fields: {} }));
+      const feedHashOf = (i: FeedItem) => present.has(i.guid) ? contentHash(i) : byGuid.get(i.guid)?.feedHash ?? contentHash(i);
+      const candidates = [...items, ...missing].filter((i) => shouldRecheck(byGuid.get(i.guid), feedHashOf(i), upcomingUrls.has(i.link) || upcoming.has(byGuid.get(i.guid)?.eventId ?? "")));
+      // Старые непроверенные события не вытесняются непрерывным потоком новых записей.
+      candidates.sort((a, b) => (byGuid.get(a.guid)?.checkedAt?.getTime() ?? 0) - (byGuid.get(b.guid)?.checkedAt?.getTime() ?? 0));
+      const fresh = candidates.slice(0, dryRun ? 3 : source.maxItems);
+      const out: Collected = { rows: [], rowGuid: [], skipped: [], feedItems: items.length, checks: new Map() };
       const ai = await aiConfigured();
       for (const item of fresh) {
         try {
-          const page = item.link ? await fetchText(item.link, { accept: "text/html" }).catch(() => null) : null;
-          // Разметка schema.org на карточке точнее модели — берём её, ИИ не нужен
+          const page = item.link ? await fetchText(item.link, { accept: "text/html" }) : null;
+          const feedHash = feedHashOf(item);
           const ld = page ? jsonLdEvents(page.text, item.link) : [];
+          const hash = contentHash([feedHash, page ? htmlToText(page.text, 60_000) : item.description, ld]);
+          const old = byGuid.get(item.guid);
+          const check = { title: item.title, link: item.link, contentHash: hash, feedHash, eventId: old?.eventId };
+          if (old?.contentHash === hash) { out.checks!.set(item.guid, check); continue; }
+          // Разметка schema.org на карточке точнее модели — берём её, ИИ не нужен
           let rows: Row[] = ld;
           if (!rows.length) {
             if (!ai) {
@@ -129,23 +151,65 @@ async function collect(source: Source, dryRun: boolean): Promise<Collected> {
             const x = await extractEvent(text, item.link || source.url, source.city);
             if (!x.isEvent) {
               out.skipped.push({ guid: item.guid, title: item.title, link: item.link, reason: x.reason ?? "не мероприятие" });
+              out.checks!.set(item.guid, check);
               continue;
             }
             rows = x.rows;
           }
           for (const r of withCity(rows)) {
-            out.rows.push(r);
+            // Один сеанс: GUID переживает перенос. Несколько сеансов требуют отдельных идентификаторов.
+            out.rows.push(rows.length === 1 ? { ...r, externalId: `rss:${item.guid}` } : r);
             out.rowGuid.push(item.guid);
           }
+          out.checks!.set(item.guid, check);
         } catch (e) {
           out.skipped.push({ guid: item.guid, title: item.title, link: item.link, reason: `ошибка: ${e instanceof Error ? e.message : e}` });
         }
       }
-      if (items.length && !fresh.length) out.message = "новых записей в ленте нет";
+      if (items.length && !fresh.length) out.message = "новых и изменённых записей нет; будущие события проверены недавно";
       return out;
     }
     default:
       throw new Error(`неизвестный тип источника «${source.kind}»`);
+  }
+}
+
+/** Изменение детальной страницы может не отражаться в списке афиши. Проверяем до пяти старейших страниц за сбор. */
+async function recheckPages(source: Source, got: Collected, pages: PageCache) {
+  if (source.kind === "rss_ai") return;
+  const links = await db.eventSource.findMany({ where: { source: source.code, event: { status: { not: "PAST" },
+    OR: [{ startsAt: { gte: new Date() } }, { endsAt: { gte: new Date() } }] } }, orderBy: { fetchedAt: "asc" }, include: { event: { select: { title: true, startsAt: true } } } });
+  const urls = [...new Set(links.map((s) => s.url))].filter((u) => u !== source.url && !got.rows.some((r) => r.sourceUrl === u));
+  const prior = new Map((await db.sourceItem.findMany({ where: { sourceId: source.id, guid: { in: urls.map((url) => `page:${contentHash(url)}`) } } })).map((i) => [i.guid, i]));
+  urls.sort((a, b) => (prior.get(`page:${contentHash(a)}`)?.checkedAt?.getTime() ?? 0) - (prior.get(`page:${contentHash(b)}`)?.checkedAt?.getTime() ?? 0));
+  const ai = await aiConfigured();
+  let checked = 0;
+  for (const url of urls) {
+    const guid = `page:${contentHash(url)}`;
+    const known = prior.get(guid);
+    if (known?.checkedAt && Date.now() - known.checkedAt.getTime() < RECHECK_MS) continue;
+    if (checked++ >= 5) break;
+    try {
+      const page = await cachedPage(pages, url);
+      const text = htmlToText(page.text, 60_000);
+      const structured = jsonLdEvents(page.text, url);
+      const hash = contentHash([text, structured]);
+      got.checks ??= new Map();
+      const check = { title: links.find((s) => s.url === url)?.event.title ?? "", link: url, contentHash: hash };
+      if (known?.contentHash !== hash) {
+        let rows = structured;
+        if (!rows.length && ai) rows = (await extractEvent(text.slice(0, 12000), url, source.city)).rows;
+        if (!rows.length) {
+          const target = links.find(s => s.url === url)?.event;
+          if (target && eventDetails(page.text, target).matched) { got.checks.set(guid, check); continue; }
+          got.skipped.push({ guid, title: check.title, link: url, reason: "ошибка: страница события не содержит распознаваемого расписания — проверьте вручную" }); continue;
+        }
+        for (const row of rows) { got.rows.push({ ...row, sourceUrl: url, city: row.city ?? source.city }); got.rowGuid.push(guid); }
+      }
+      got.checks.set(guid, check);
+    } catch (e) {
+      got.skipped.push({ guid, title: "Проверка события", link: url, reason: `ошибка: ${e instanceof Error ? e.message : e}` });
+    }
   }
 }
 
@@ -181,7 +245,13 @@ export async function runSource(sourceId: string, userLogin: string | null): Pro
   const source = await db.source.findUniqueOrThrow({ where: { id: sourceId } });
   const kind = source.kind as SourceKind;
   try {
-    const { result: got, calls } = await withAiUsage(() => collect(source, false));
+    const pages: PageCache = new Map(), enrichment = enrichmentPass();
+    const { result: got, calls } = await withAiUsage(async () => {
+      const got = await collect(source, false, pages);
+      await enrichSourceEvents(source, pages, enrichment, userLogin);
+      await recheckPages(source, got, pages);
+      return got;
+    });
     got.rows = prepareRows(source, got.rows);
     const tokens = calls.reduce((n, c) => n + c.tokens, 0);
     const costRub = await tokensCostRub(tokens);
@@ -203,8 +273,10 @@ export async function runSource(sourceId: string, userLogin: string | null): Pro
           review,
         })
       : null;
+    // Новая карточка тоже дополняется в этом обходе; повторной загрузки страницы нет.
+    await enrichSourceEvents(source, pages, enrichment, userLogin, report?.rows.filter(r => r.result === "created" && r.eventId).map(r => r.eventId!) ?? []);
     // Записи ленты и куски страницы: разобранные больше не отправляем модели
-    if (kind === "rss_ai" || kind === "html_ai") {
+    if (kind === "rss_ai" || kind === "html_ai" || got.checks?.size || got.skipped.length) {
       const byGuid = new Map<string, { status: string; reason?: string; eventId?: string }>();
       report?.rows.forEach((r, i) => {
         const guid = got.rowGuid[i];
@@ -214,14 +286,25 @@ export async function runSource(sourceId: string, userLogin: string | null): Pro
         if (!prev || (ok && prev.status !== "imported")) byGuid.set(guid, { status: ok ? "imported" : "rejected", reason: r.reason, eventId: r.eventId });
       });
       for (const s of got.skipped) byGuid.set(s.guid, { status: s.reason.startsWith("ошибка") ? "error" : "rejected", reason: s.reason });
+      for (const [guid, check] of got.checks ?? []) if (!byGuid.has(guid)) byGuid.set(guid, { status: "imported", eventId: check.eventId ?? undefined });
       for (const [guid, v] of byGuid) {
-        // Ошибку загрузки страницы попробуем в следующий раз — не запоминаем
-        if (v.status === "error") continue;
+        // Запоминаем попытку, но не хеш: сбой сети не должен означать, что содержимое уже обработано.
+        if (v.status === "error") {
+          const skipped = got.skipped.find((s) => s.guid === guid);
+          await db.sourceItem.upsert({ where: { sourceId_guid: { sourceId: source.id, guid } },
+            create: { sourceId: source.id, guid, status: "error", reason: v.reason?.slice(0, 500), title: skipped?.title.slice(0, 300), link: skipped?.link, checkedAt: new Date() },
+            update: { status: "error", reason: v.reason?.slice(0, 500), checkedAt: new Date() },
+          });
+          continue;
+        }
+        const check = got.checks?.get(guid);
+        const meta = check ? { title: check.title.slice(0, 300), link: check.link, contentHash: check.contentHash, feedHash: check.feedHash, checkedAt: new Date() } : {};
         await db.sourceItem.upsert({
           where: { sourceId_guid: { sourceId: source.id, guid } },
-          create: { sourceId: source.id, guid, status: v.status, reason: v.reason?.slice(0, 500), eventId: v.eventId },
-          update: { status: v.status, reason: v.reason?.slice(0, 500), eventId: v.eventId },
+          create: { sourceId: source.id, guid, status: v.status, reason: v.reason?.slice(0, 500), eventId: v.eventId, ...meta },
+          update: { status: v.status, reason: v.reason?.slice(0, 500), eventId: v.eventId, ...meta },
         });
+        if (check?.link) await db.eventSource.updateMany({ where: { source: source.code, url: check.link }, data: { fetchedAt: new Date() } });
       }
     }
     // Площадка источника: новые площадки-залы получают адрес и точные координаты
@@ -230,6 +313,7 @@ export async function runSource(sourceId: string, userLogin: string | null): Pro
       ? [`добавлено ${report.created}`, `обновлено ${report.updated}`, `без изменений ${report.unchanged}`, `отклонено ${report.rejected}`]
       : ["событий не найдено"];
     if (got.skipped.length) parts.push(`пропущено записей ленты ${got.skipped.length}`);
+    if (enrichment.urls.size) parts.push(`дополнение: страниц ${enrichment.urls.size}, полей ${enrichment.fields}, площадок ${enrichment.venues}${enrichment.errors ? `, ошибок ${enrichment.errors}` : ""}`);
     if (tokens) parts.push(`ИИ: ${tokens} ток. (~${costRub.toFixed(2)} ₽)`);
     const message = [got.message, parts.join(", ")].filter(Boolean).join(". ");
     await db.source.update({ where: { id: source.id }, data: { lastRunAt: new Date(), lastStatus: "ok", lastMessage: message.slice(0, 500) } });

@@ -35,6 +35,11 @@ function objects(html: string): Obj[] {
   return out;
 }
 
+/** В том числе карточки репертуара без дат: подходят для дополнения уже известных событий. */
+export function jsonLdDetails(html: string): Obj[] {
+  return objects(html).filter(isEvent);
+}
+
 /** Тип события schema.org → код жанра (у общего «Event» жанра нет). */
 const TYPE_CATEGORY: Record<string, string> = {
   TheaterEvent: "theatre",
@@ -53,6 +58,34 @@ const categoryOf = (t: unknown) => (Array.isArray(t) ? t : [t]).map((x) => (type
 const str = (v: unknown) => (typeof v === "string" ? v.trim() : typeof v === "number" ? String(v) : undefined);
 const first = (v: unknown) => (Array.isArray(v) ? v[0] : v);
 
+/** Ограничение 6+/6-; закрытый рекомендуемый диапазон «6–12» не считаем ограничением 6+. */
+export function jsonLdAge(value: unknown): number | undefined {
+  const m = str(value)?.match(/^(0|6|12|16|18)\s*(?:\+|-)?$/);
+  return m ? +m[1] : undefined;
+}
+
+export function jsonLdPrice(event: Obj, strictCurrency = false): { min: number; max: number | null } | undefined {
+  const offers = (Array.isArray(event.offers) ? event.offers : event.offers ? [event.offers] : []).filter((v): v is Obj => !!v && typeof v === "object");
+  const number = (v: unknown) => {
+    const text = str(v)?.replace(/[\s\u00a0\u202f]/g, "");
+    if (!text || !/^\d+(?:[.,]\d{1,2})?$/.test(text)) return;
+    const n = Math.round(Number(text.replace(",", "."))); return n <= 1_000_000 ? n : undefined;
+  };
+  const prices = offers.map(offer => {
+    const currency = str(offer.priceCurrency)?.toUpperCase();
+    if (currency ? !["RUB", "RUR", "643"].includes(currency) : strictCurrency) return;
+    const min = number(offer.lowPrice ?? offer.price), max = number(offer.highPrice ?? (offer.lowPrice == null ? offer.price : undefined));
+    return min != null && (max == null || max >= min) ? { min, max: max ?? null } : undefined;
+  });
+  if (prices.length && prices.every(p => !!p)) {
+    const min = Math.min(...prices.map(p => p!.min)), max = prices.every(p => p!.max != null) ? Math.max(...prices.map(p => p!.max!)) : null;
+    if (event.isAccessibleForFree === true && min !== 0) return;
+    if (strictCurrency && min === 0 && max !== 0) return;
+    return { min, max };
+  }
+  if (!offers.length && event.isAccessibleForFree === true) return { min: 0, max: 0 };
+}
+
 /** Строки импорта из разметки страницы. pageUrl — ссылка на источник, если у события нет своей. */
 export function jsonLdEvents(html: string, pageUrl: string): Record<string, unknown>[] {
   return objects(html)
@@ -62,7 +95,8 @@ export function jsonLdEvents(html: string, pageUrl: string): Record<string, unkn
       const addr = (loc && typeof loc.address === "object" ? loc.address : undefined) as Obj | undefined;
       const offers = first(e.offers) as Obj | undefined;
       const status = str(e.eventStatus) ?? "";
-      const age = str(e.typicalAgeRange)?.match(/\d+/)?.[0];
+      const age = jsonLdAge(e.contentRating ?? e.typicalAgeRange);
+      const price = jsonLdPrice(e);
       return {
         title: str(e.name),
         description: str(e.description),
@@ -74,9 +108,9 @@ export function jsonLdEvents(html: string, pageUrl: string): Record<string, unkn
         city: str(addr?.addressLocality),
         lat: str((loc?.geo as Obj | undefined)?.latitude),
         lon: str((loc?.geo as Obj | undefined)?.longitude),
-        priceMin: str(offers?.lowPrice) ?? str(offers?.price),
-        priceMax: str(offers?.highPrice),
-        isFree: e.isAccessibleForFree === true || str(offers?.price) === "0" ? true : undefined,
+        priceMin: price?.min,
+        priceMax: price?.max ?? undefined,
+        isFree: price?.min === 0 && price.max === 0 ? true : undefined,
         ageLimit: age,
         imageUrl: str(first(e.image)) ?? str((first(e.image) as Obj | undefined)?.url),
         ticketUrl: str(offers?.url),

@@ -3,6 +3,7 @@ import type { Source } from "@/generated/prisma/client";
 import { db } from "../db";
 import { geocode, isBashkortostanRegion } from "../geocode";
 import { normalizeTitle, RB_SETTLEMENTS } from "../normalize";
+import { importVenueLocation } from "../venue-registry";
 
 // Площадка источника и город из названия площадки — до импорта, чтобы у событий были точные адрес и координаты.
 
@@ -79,13 +80,7 @@ export async function applySourceVenue(source: Pick<Source, "city" | "venueName"
   let n = 0;
   for (const v of venues) {
     if (!sameBuilding(v.name, source.venueName)) continue;
-    await db.venue.update({
-      where: { id: v.id },
-      data: {
-        ...(source.venueAddress && !v.address ? { address: source.venueAddress } : {}),
-        ...(lat != null && lon != null ? { lat, lon, approx: false, geocodedAt: new Date() } : {}),
-      },
-    });
+    await db.$transaction((tx) => importVenueLocation(tx, v, { address: source.venueAddress, lat, lon }, `площадка источника: ${source.venueName}`));
     n++;
   }
   return n;
