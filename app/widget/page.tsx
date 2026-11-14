@@ -1,6 +1,8 @@
 import { EventCard } from "@/components/event-card";
 import { groupSessions, toCard } from "@/lib/format";
+import { tr, type Lang } from "@/lib/i18n";
 import { datePresets, localDay, parseEventFilter, searchEvents } from "@/lib/server/events";
+import { loadBaOverrides } from "@/lib/server/lang";
 
 import { HeightReporter } from "./height-reporter";
 
@@ -41,10 +43,14 @@ const FONTS: Record<string, string> = {
  *   font     system | serif         шрифт (по умолчанию Inter)
  *   accent   hex без #              цвет акцентов
  *   title, link=0                   заголовок, без ссылки «Вся афиша»
+ *   lang=ba                         подписи и карточки на башкирском
  *   ask=1                           строка «Спросить помощника»: вопрос открывается в чате на сайте афиши (новая вкладка)
  */
 export default async function Widget({ searchParams }: { searchParams: Promise<Record<string, string>> }) {
-  const { period, layout, title, accent, link, wid, cols, img, theme, bg, radius, font, ask, ...sp } = await searchParams;
+  const { period, layout, title, accent, link, wid, cols, img, theme, bg, radius, font, ask, lang: langParam, ...sp } = await searchParams;
+  const lang: Lang = langParam === "ba" ? "ba" : "ru";
+  if (lang === "ba") await loadBaOverrides(); // переводы из админки («Сайт» → локализация)
+  const t = (k: Parameters<typeof tr>[1]) => tr(lang, k);
   // Показы одного события сводятся в карточку — берём с запасом, чтобы карточек было сколько просили
   const limit = Math.min(Math.max(Number(sp.limit) || 6, 1), 30);
   const parsed = parseEventFilter({ ...sp, limit: String(Math.min(limit * 3, 90)), ...periodDates(period) });
@@ -74,6 +80,7 @@ export default async function Widget({ searchParams }: { searchParams: Promise<R
   const gridStyle = !list && n ? { gridTemplateColumns: `repeat(auto-fill, minmax(max(200px, calc((100% - ${(n - 1) * 12}px) / ${n})), 1fr))` } : undefined;
   return (
     <main
+      lang={lang}
       className={`afw p-2 ${dark ? "afw-dark text-stone-100" : ""}`}
       style={{ ...(color ? { "--brand": color } : {}), colorScheme: dark ? "dark" : "light" } as React.CSSProperties}
     >
@@ -87,31 +94,31 @@ export default async function Widget({ searchParams }: { searchParams: Promise<R
             name="ask"
             required
             maxLength={500}
-            placeholder="Спросить помощника: куда сходить в субботу с ребёнком?"
-            aria-label="Вопрос помощнику афиши"
+            placeholder={t("widgetAsk")}
+            aria-label={t("widgetAskLabel")}
             className={`min-w-0 flex-1 rounded-2xl px-3.5 py-2 text-sm ring-1 outline-none focus:ring-2 focus:ring-[var(--brand)] ${dark ? "bg-stone-800 text-stone-100 ring-white/10 placeholder:text-stone-400" : "bg-white ring-black/10"}`}
           />
           <button type="submit" className="shrink-0 rounded-2xl bg-[var(--brand)] px-4 py-2 text-sm font-medium text-white hover:brightness-110">
-            Спросить
+            {t("widgetAskBtn")}
           </button>
         </form>
       )}
       {items.length ? (
         <div className={list ? "grid gap-2" : "grid gap-3 [grid-template-columns:repeat(auto-fill,minmax(240px,1fr))]"} style={gridStyle}>
           {items.map((e) => (
-            <EventCard key={e.id} event={e} target="_blank" tile={!list} row={list} accent ageNote={!!sp.age} image={img !== "0"} />
+            <EventCard key={e.id} event={e} target="_blank" tile={!list} row={list} accent ageNote={!!sp.age} image={img !== "0"} lang={lang} />
           ))}
         </div>
       ) : (
-        <p className={`py-8 text-center text-sm ${dark ? "text-stone-400" : "text-stone-500"}`}>Подходящих событий пока нет</p>
+        <p className={`py-8 text-center text-sm ${dark ? "text-stone-400" : "text-stone-500"}`}>{t("widgetEmpty")}</p>
       )}
       {link !== "0" && (
         <a href={`${base}/`} target="_blank" rel="noopener" className="mt-3 block text-center text-sm font-medium text-[var(--brand)] hover:underline">
-          Вся афиша культуры Башкортостана →
+          {t("widgetAll")}
         </a>
       )}
       <p className={`mt-2 text-center text-[11px] ${dark ? "text-stone-400" : "text-stone-500"}`}>
-        Неофициальный сервис. Данные — из открытых источников, у каждого события есть ссылка на источник.
+        {t("widgetDisclaimer")}
       </p>
     </main>
   );

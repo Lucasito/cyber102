@@ -111,6 +111,7 @@ const PHRASES = {
       "Чтобы подобрать события рядом, нужно ваше местоположение. Нажмите «📍 Показать, где я» — устройство спросит разрешение; координаты нужны только для этого поиска и не сохраняются. Или напишите город или район.",
     nearDenied: "Без местоположения ищу по всей афише.",
     nearMe: "Рядом с вами",
+    price: { top: "Самое дорогое", low: "Самое доступное", next: "Дальше по цене", free: "бесплатно", upTo: "до", from: "от" },
     why: { otherDates: "не в выбранные даты", otherCity: "другой город", otherGenre: "другой жанр", free: "бесплатно", ageUnknown: "возраст не указан", pushkin: "Пушкинская карта", wheelchair: "доступно на коляске", hearing: "для слабослышащих", vision: "для слабовидящих", period: "идёт в эти дни" },
     reply: "Обращайся на «вы».",
   },
@@ -135,6 +136,7 @@ const PHRASES = {
       "Янығыҙҙағы сараларҙы һайлау өсөн урынығыҙ кәрәк. «📍 Ҡайҙа икәнемде күрһәт» төймәһенә баҫығыҙ — ҡоролма рөхсәт һорар; координаталар был эҙләү өсөн генә кәрәк һәм һаҡланмай. Йәки ҡаланы йәки районды яҙығыҙ.",
     nearDenied: "Урынһыҙ бөтә афиша буйынса эҙләйем.",
     nearMe: "Янығыҙҙа",
+    price: { top: "Иң ҡиммәте", low: "Иң арзаны", next: "Артабан хаҡ буйынса", free: "түләүһеҙ", upTo: "тиклем", from: "башлап" },
     why: { otherDates: "һайланған көндәрҙә түгел", otherCity: "башҡа ҡала", otherGenre: "башҡа жанр", free: "түләүһеҙ", ageUnknown: "йәше күрһәтелмәгән", pushkin: "Пушкин картаһы", wheelchair: "коляскала барырға мөмкин", hearing: "ишетеүе насарҙар өсөн", vision: "күреүе насарҙар өсөн", period: "был көндәрҙә бара" },
     reply: "Яуапты башҡорт телендә яҙ, «һеҙ» тип мөрәжәғәт ит. Сараларҙың исемдәрен һәм урындарын үҙгәртмә.",
   },
@@ -438,10 +440,14 @@ async function agentCore(
     items = r.items ?? [];
     if (!items.length) return { text: tool.name === "find_similar" ? P.similarNone : P.venueNone, events: [], suggestions: ["Новый поиск"] };
   } else {
+    // Поджанр («балет», «опера»): слово ищем только в самом событии — иначе «Театр оперы и балета» в названии
+    // площадки тянет в подборку весь его репертуар
+    const sub = current.q ? SUBGENRES.find((g) => g.test(current.q!.toLowerCase())) : undefined;
     const search = async (f: EventFilter, extra: Record<string, unknown>) => {
       const r = await call("search_events", toArgs(f), extra, { exclude });
       if (!r.ok) throw new Error(r.error);
-      return r.items ?? [];
+      const found = r.items ?? [];
+      return sub && f.q ? found.filter((e) => sub.test(`${e.title} ${e.description ?? ""}`.toLowerCase())) : found;
     };
     items = await search(current, { by: tool.by });
     for (const key of relaxSteps) {
@@ -523,7 +529,7 @@ async function agentCore(
     { temperature: T.explainTemperature, maxTokens: T.explainMaxTokens },
   );
   // «Самое дорогое / дешёвое» — превосходную степень называет код по отсортированному списку: модель путала порядок
-  const byPrice = current.sort === "price_desc" || current.sort === "price_asc" ? priceExplanation(items, current.sort) : null;
+  const byPrice = current.sort === "price_desc" || current.sort === "price_asc" ? priceExplanation(items, current.sort, P.price, lang) : null;
   let explainedByAi = !noAi && !byPrice;
   const explanation = byPrice
     ? byPrice
@@ -569,6 +575,9 @@ const CANCEL = /^(нет|отмена|отменить|не надо|не нуж
 const SUBSCRIBE_RE = /подпиш|подписк|присылай|уведомл|сообща\S* о новых|получать (новые|о новых)/;
 const FEEDBACK_RE = /передай\S* организатор|передай\S* модератор|сообщи\S* об ошибке|ошибк\S* в (карточке|афише|описании|событии)|пожалова|(неверн|неправильн)\S* (цен|врем|дат|адрес)/;
 const SCHEDULE_RE = /расписани|что (идет|будет|проходит|покажут|дают) (в|на) /;
+/** Поджанры, которые есть в названиях площадок («Театр оперы и балета») — для них поиск по слову только в событии. */
+const SUBGENRES = [/балет/, /опер(а|ы|у|е|ой|етт)/, /мюзикл/, /джаз/];
+
 /** «Рядом со мной», «около меня», «поблизости» — поиск вокруг человека (местоположение — только с согласия). */
 const NEAR_ME_RE = /рядом( со мной|$|[?!.,])|около меня|возле меня|поблизости|неподалеку|недалеко от меня|ближе ко мне|рядом с (домом|работой)|в шаговой/;
 const PLAN_NEAR_RE = /рядом друг с другом|недалеко друг от друга/;
@@ -810,19 +819,21 @@ export function stripLinks(text: string) {
 const plain = (f: EventFilter) => JSON.parse(JSON.stringify(Object.fromEntries(Object.entries(f).filter(([, v]) => v != null)))) as Record<string, unknown>;
 
 /** «Самое дорогое — «A», до 1800 ₽, сб, 20 ноября, Большой зал. Дальше: «B» — 1500 ₽, «C» — 1200 ₽.» */
-function priceExplanation(items: EventItem[], sort: "price_desc" | "price_asc") {
+function priceExplanation(items: EventItem[], sort: "price_desc" | "price_asc", L: Record<keyof (typeof PHRASES)["ru"]["price"], string>, lang: Lang) {
   // Показы одного события — один раз: «Дальше по цене» не повторяет то же название
   const seen = new Set<string>();
   const priced = items.filter((e) => e.priceMin != null && !seen.has(e.title.toLowerCase()) && !!seen.add(e.title.toLowerCase()));
   if (!priced.length) return null;
   const desc = sort === "price_desc";
-  const price = (e: EventItem) => (e.priceMin === 0 && !e.priceMax ? "бесплатно" : desc ? `до ${e.priceMax ?? e.priceMin} ₽` : `от ${e.priceMin} ₽`);
+  // По-башкирски послелог после числа: «1800 ₽ тиклем», «300 ₽-тан башлап» упрощаем до «300 ₽ башлап»
+  const amount = (n: number, word: string) => (lang === "ba" ? `${n} ₽ ${word}` : `${word} ${n} ₽`);
+  const price = (e: EventItem) => (e.priceMin === 0 && !e.priceMax ? L.free : desc ? amount(e.priceMax ?? e.priceMin!, L.upTo) : amount(e.priceMin!, L.from));
   const [first, ...rest] = priced;
   const day = first.startsAt.toLocaleString("ru-RU", { timeZone: TZ, weekday: "short", day: "numeric", month: "long", hour: "2-digit", minute: "2-digit" });
   const next = rest.slice(0, 2).map((e) => `«${e.title}» — ${price(e)}`);
   return (
-    `${desc ? "Самое дорогое" : "Самое доступное"} — «${first.title}», ${price(first)}, ${day}${first.venue ? `, ${first.venue.name}` : ""}.` +
-    (next.length ? ` Дальше по цене: ${next.join(", ")}.` : "")
+    `${desc ? L.top : L.low} — «${first.title}», ${price(first)}, ${day}${first.venue ? `, ${first.venue.name}` : ""}.` +
+    (next.length ? ` ${L.next}: ${next.join(", ")}.` : "")
   );
 }
 
@@ -975,6 +986,13 @@ export function ruleFilter(text: string, now = new Date(), ages = { kids: 6, tee
   if (t.length <= 60) {
     const genre = GENRES.find(([re]) => re.test(t));
     if (genre) out.category = genre[1];
+  }
+  // Поджанр — поиск по слову (жанр «театр» — из GENRES); «театр оперы и балета» — это площадка, не поджанр
+  if (!/театр\S*\s+оперы\s+и\s+балета/.test(t)) {
+    if (/балет/.test(t)) out.q = "балет";
+    else if (/оперетт/.test(t)) out.q = "оперетт";
+    else if (/(^|[^а-яё])опер(а|у|ы|е|ой)([^а-яё]|$)/.test(t)) out.q = "опер";
+    else if (/мюзикл/.test(t)) out.q = "мюзикл";
   }
   // «Самое дорогое», «подороже» — по убыванию цены; «самое дешёвое» — по возрастанию
   if (/сам\S* (дорог|престижн)|подороже|дорог\S* (концерт|спектакл|событ|билет|мероприят)/.test(t)) out.sort = "price_desc";

@@ -30,6 +30,7 @@ type State = {
   radius: string;
   font: string;
   ask: boolean;
+  lang: string;
 };
 
 const INITIAL: State = {
@@ -56,6 +57,7 @@ const INITIAL: State = {
   radius: "16",
   font: "",
   ask: false,
+  lang: "ru",
 };
 const DEFAULT_ACCENT = INITIAL.accent;
 
@@ -107,6 +109,7 @@ function widgetParams(s: State): [string, string][] {
   if (s.radius !== "16") add("radius", s.radius);
   add("font", s.font);
   if (s.ask) add("ask", "1");
+  if (s.lang === "ba") add("lang", "ba");
   return p;
 }
 
@@ -281,6 +284,12 @@ export function WidgetBuilder({ base, cities, categories }: { base: string; citi
               <option value="transparent">Прозрачный</option>
               <option value="white">Белый</option>
               <option value="custom">Свой цвет</option>
+            </select>
+          </Field>
+          <Field label="Язык">
+            <select className={inputCls} value={s.lang} onChange={(e) => set("lang", e.target.value)}>
+              <option value="ru">Русский</option>
+              <option value="ba">Башкирский</option>
             </select>
           </Field>
           <Field label="Шрифт">
