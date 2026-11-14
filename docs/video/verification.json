@@ -1,0 +1,22 @@
+{
+  "file": "afisha-demo-5min.mp4",
+  "recordedAt": "2026-11-14T14:25:55.586689+00:00",
+  "durationSeconds": 300,
+  "width": 1920,
+  "height": 1080,
+  "fps": 25,
+  "videoCodec": "H.264",
+  "audioCodec": "AAC",
+  "voice": "ru-RU-SvetlanaNeural",
+  "visibleCursor": true,
+  "highlightedClicks": 39,
+  "chapters": 8,
+  "bytes": 12291851,
+  "sha256": "9972577d733200b1fb592f3ddcd43a53bb79b3fe4b314089393bc83d4c8179b1",
+  "checks": {
+    "fullAudioAndVideoDecode": "passed",
+    "chapterBoundaries": "passed",
+    "encodedClickHighlight": "passed",
+    "audioPeakDb": -3.4
+  }
+}
