@@ -14,6 +14,9 @@ import { normalizeTitle } from "./normalize";
 const TITLE_STOP = new Set([
   "спектакль", "концерт", "выставка", "мюзикл", "премьера", "программа", "музыкальная", "музыкальный", "показ", "лекция", "мастер", "класс",
   "экскурсия", "фестиваль", "постановка", "представление", "детский", "детская", "для", "детей", "семейный", "новый", "новая", "по", "на", "и", "в", "с",
+  // Местоимения и служебные слова: «Моя тёща» и «Неспетая песня моя» — не одно событие
+  "моя", "мой", "мое", "мои", "наш", "наша", "наше", "наши", "ваш", "это", "все", "весь", "вся", "как", "его", "она", "они", "что", "или", "без", "под",
+  "над", "про", "при", "из", "от", "до", "так", "кто", "где", "там", "тут", "еще", "уже", "the", "and",
 ]);
 /** Слова площадки, которые есть почти у всех: по ним площадки не различить. */
 const VENUE_STOP = new Set([
@@ -43,6 +46,14 @@ function venueCore(venue: string): Set<string> {
   );
 }
 
+/** Порог похожести названий: на той же площадке достаточно половины слов, на разных — почти полное совпадение. */
+export function dupLevel(score: number, sameVenue: boolean): DupLevel | null {
+  if (sameVenue) return score >= 0.8 ? "same" : score >= 0.5 ? "possible" : null;
+  // Разные площадки в одно время: одно событие бывает (разные названия площадки у источников), но только при
+  // почти одинаковом названии — «Новогодняя ёлка» в двух театрах решает модератор
+  return score >= 0.8 ? "possible" : null;
+}
+
 /** Похожесть названий 0–1: доля общих слов от короткого названия (перевод и жанр не мешают). */
 export function titleScore(a: string, b: string) {
   const A = titleCore(a);
@@ -53,7 +64,7 @@ export function titleScore(a: string, b: string) {
   return common / Math.min(A.size, B.size);
 }
 
-function venueMatch(a: string | null | undefined, b: string | null | undefined) {
+export function venueMatch(a: string | null | undefined, b: string | null | undefined) {
   if (!a || !b) return false;
   if (normalizeTitle(a) === normalizeTitle(b)) return true;
   const A = venueCore(a);
@@ -92,11 +103,9 @@ export async function findDuplicate(
   let best: DupCandidate | null = null;
   for (const e of rows) {
     const score = titleScore(rec.title, e.title);
-    if (score < 0.5) continue;
-    const sameVenue = venueMatch(rec.venue, e.venue?.name);
-    // Явный дубль — почти то же название на той же площадке. Совпало только название и время, а площадки разные —
-    // «возможный»: две «Новогодние ёлки» в 11:00 в разных театрах — разные события, решает модератор
-    const level: DupLevel = score >= 0.8 && sameVenue ? "same" : "possible";
+    // Явный дубль — почти то же название на той же площадке; остальное — «возможный», решает модератор
+    const level = dupLevel(score, venueMatch(rec.venue, e.venue?.name));
+    if (!level) continue;
     const cand = { id: e.id, title: e.title, startsAt: e.startsAt, venueName: e.venue?.name ?? null, level, score };
     if (!best || (cand.level === "same" && best.level !== "same") || (cand.level === best.level && cand.score > best.score)) best = cand;
   }
@@ -131,9 +140,8 @@ export async function scanDuplicates(limit = 50) {
       if (!a.venue || !b.venue || a.venue.city.toLowerCase() !== b.venue.city.toLowerCase()) continue;
       if (a.distinctFrom.includes(b.id) || b.distinctFrom.includes(a.id)) continue; // модератор уже решил: разные
       const score = titleScore(a.title, b.title);
-      if (score < 0.5) continue;
-      const sameVenue = venueMatch(a.venue.name, b.venue.name);
-      pairs.push({ a, b, score, level: score >= 0.8 && sameVenue ? "same" : "possible" });
+      const level = dupLevel(score, venueMatch(a.venue.name, b.venue.name));
+      if (level) pairs.push({ a, b, score, level });
     }
   }
   return pairs.sort((x, y) => Number(y.level === "same") - Number(x.level === "same") || y.score - x.score).slice(0, limit);

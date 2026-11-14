@@ -237,7 +237,11 @@ async function venueFor(tx: Prisma.TransactionClient, n: Normalized) {
   const inCity = await tx.venue.findMany({ where: { city: n.city } });
   const found = inCity.find((v) => normalizeTitle(v.name) === normalizeTitle(n.venue));
   if (!found) return tx.venue.create({ data: { name: n.venue, city: n.city, address: n.address, lat: n.lat, lon: n.lon } });
-  const fill = { ...(!found.address && n.address ? { address: n.address } : {}), ...(found.lat == null && n.lat != null ? { lat: n.lat, lon: n.lon } : {}) };
+  // Примерные координаты (центр города) заменяются точными; новый адрес у такой площадки — повод поискать заново
+  const fill = {
+    ...(!found.address && n.address ? { address: n.address, ...(found.approx ? { geocodedAt: null } : {}) } : {}),
+    ...((found.lat == null || found.approx) && n.lat != null ? { lat: n.lat, lon: n.lon, approx: false } : {}),
+  };
   return Object.keys(fill).length ? tx.venue.update({ where: { id: found.id }, data: fill }) : found;
 }
 

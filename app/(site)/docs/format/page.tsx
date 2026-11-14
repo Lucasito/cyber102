@@ -84,7 +84,7 @@ export default function FormatPage() {
                   </td>
                   <td className="py-2 pr-3 text-stone-600">
                     {f.type}
-                    <div className="text-xs text-stone-400">{f.example}</div>
+                    <div className="text-xs text-stone-500">{f.example}</div>
                   </td>
                   <td className="py-2 pr-3 text-stone-600">{f.about}</td>
                 </tr>
@@ -98,7 +98,7 @@ export default function FormatPage() {
         <h2 className="text-xl font-semibold">Пример: JSON</h2>
         <p className="text-stone-600">
           Массив событий или объект <code>{"{ \"events\": [...] }"}</code>. Кодировка UTF-8. Образец:{" "}
-          <a href="/docs/format/sample.json" className="font-medium text-[var(--brand)] hover:underline">
+          <a href="/docs/format/sample.json" className="font-medium break-all text-[var(--brand)] hover:underline">
             {base}/docs/format/sample.json
           </a>
         </p>
@@ -110,7 +110,7 @@ export default function FormatPage() {
         <p className="text-stone-600">
           Обычный RSS 2.0 плюс пространство имён <code>xmlns:afisha=&quot;urn:afisha-rb:1&quot;</code>. Название — в <code>title</code>, ссылка на страницу события — в{" "}
           <code>link</code>, постоянный код — в <code>guid</code>, остальные поля — элементами <code>afisha:имя</code>. Образец:{" "}
-          <a href="/docs/format/sample.xml" className="font-medium text-[var(--brand)] hover:underline">
+          <a href="/docs/format/sample.xml" className="font-medium break-all text-[var(--brand)] hover:underline">
             {base}/docs/format/sample.xml
           </a>
         </p>

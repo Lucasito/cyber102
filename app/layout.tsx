@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import "@fontsource-variable/inter";
 import "./globals.css";
+import { getLang } from "@/lib/server/lang";
 
 export const metadata: Metadata = {
   title: { default: "Афиша культуры Башкортостана", template: "%s — Афиша культуры Башкортостана" },
@@ -10,9 +11,10 @@ export const metadata: Metadata = {
 
 export const viewport: Viewport = { themeColor: "#0b7a55" };
 
-export default function RootLayout({ children }: { children: React.ReactNode }) {
+export default async function RootLayout({ children }: { children: React.ReactNode }) {
+  // Язык страницы — для экранных чтецов и переносов: башкирский интерфейс — lang="ba"
   return (
-    <html lang="ru">
+    <html lang={await getLang()}>
       <body>{children}</body>
     </html>
   );

@@ -379,6 +379,11 @@ model Source {
   url           String
   adapter       String? // kind = custom: ключ парсера из lib/server/collect/adapters.ts
   city          String? // город по умолчанию, если в записи его нет
+  // Площадка источника: все события в одном здании — записи без площадки или с похожим названием привязываются к ней
+  venueName     String?
+  venueAddress  String?
+  venueLat      Float? // координаты здания; не заданы — ищутся геокодером по адресу
+  venueLon      Float?
   autoPublish   Boolean      @default(false) // прошедшие проверку — сразу в афишу (у rss_ai — всегда модерация)
   enabled       Boolean      @default(true)
   intervalHours Int          @default(6)

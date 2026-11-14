@@ -6,6 +6,7 @@ import { requireAdmin } from "@/lib/server/admin";
 import { audit } from "@/lib/server/audit";
 import { ADAPTERS } from "@/lib/server/collect/adapters";
 import { previewSource, runSource, SOURCE_KINDS, type PreviewResult, type SourceKind } from "@/lib/server/collect";
+import { applySourceVenue } from "@/lib/server/collect/venue";
 import { db } from "@/lib/server/db";
 import type { ActionState } from "./actions";
 
@@ -34,6 +35,12 @@ export async function saveSource(_: ActionState, f: FormData): Promise<ActionSta
     if (!/^https?:\/\/\S+$/.test(url)) throw new Error("Адрес должен начинаться с http:// или https://");
     const adapter = kind === "custom" ? text(f, "adapter") : "";
     if (kind === "custom" && !ADAPTERS[adapter]) throw new Error("Выберите индивидуальный парсер");
+    // Координаты здания: «54.7230, 55.9446» (как копирует Яндекс Карты); пусто — найдутся по адресу
+    const coords = text(f, "venueCoords");
+    const m = coords.match(/^\s*(-?\d{1,2}(?:[.,]\d+)?)\s*[,; ]\s*(-?\d{1,3}(?:[.,]\d+)?)\s*$/);
+    if (coords && !m) throw new Error("Координаты — «широта, долгота», например 54.7230, 55.9446");
+    const [venueLat, venueLon] = m ? [Number(m[1].replace(",", ".")), Number(m[2].replace(",", "."))] : [null, null];
+    if (venueLat != null && (venueLat < 51 || venueLat > 57 || venueLon! < 53 || venueLon! > 60.5)) throw new Error("Координаты вне Башкортостана — проверьте порядок: сначала широта (51–57), потом долгота (53–60)");
     const clash = await db.source.findUnique({ where: { code } });
     if (clash && clash.id !== id) throw new Error(`Код «${code}» уже занят источником «${clash.name}»`);
     const data = {
@@ -49,12 +56,17 @@ export async function saveSource(_: ActionState, f: FormData): Promise<ActionSta
       intervalHours: num(f, "intervalHours", 1, 168, 12),
       maxItems: num(f, "maxItems", 1, 100, 20),
       note: text(f, "note").slice(0, 1000) || null,
+      venueName: text(f, "venueName").slice(0, 200) || null,
+      venueAddress: text(f, "venueAddress").slice(0, 300) || null,
+      venueLat,
+      venueLon,
     };
     if (id) {
       await db.source.update({ where: { id }, data });
       await audit({ userLogin: me.login, action: "update", entity: "source", entityId: id, summary: `Источник «${data.name}» изменён` });
+      const fixed = await applySourceVenue(data).catch(() => 0);
       revalidatePath("/admin/sources");
-      return { ok: true, message: "Сохранено" };
+      return { ok: true, message: fixed ? `Сохранено. Координаты уточнены у площадок: ${fixed}` : "Сохранено" };
     }
     const created = await db.source.create({ data: { ...data, createdBy: me.login } });
     await audit({ userLogin: me.login, action: "create", entity: "source", entityId: created.id, summary: `Добавлен источник «${data.name}» (${SOURCE_KINDS[kind].label})` });

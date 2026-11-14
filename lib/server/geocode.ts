@@ -99,7 +99,8 @@ export function venueNameVariants(name: string): string[] {
  * За проход — не больше limit площадок (каждая — до 7 запросов по 1,1 с; ответы кешируются).
  */
 export async function geocodeVenues(limit = 5) {
-  const venues = await db.venue.findMany({ where: { lat: null, geocodedAt: null }, take: limit });
+  // Без координат — и примерные (центр города), у которых появился адрес: адрес в админке сбрасывает geocodedAt
+  const venues = await db.venue.findMany({ where: { geocodedAt: null, OR: [{ lat: null }, { approx: true, address: { not: null } }] }, take: limit });
   let found = 0;
   for (const v of venues) {
     const queries = [
@@ -116,6 +117,11 @@ export async function geocodeVenues(limit = 5) {
       }
     }
     let approx = false;
+    if (!hit && v.approx) {
+      // Был центр города, по адресу не нашлось — оставляем как есть, второй раз не ищем
+      await db.venue.update({ where: { id: v.id }, data: { geocodedAt: new Date() } });
+      continue;
+    }
     if (!hit) {
       const c = await geocode(`${v.city}, Башкортостан`);
       if (c === null) return found;

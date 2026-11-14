@@ -1,7 +1,7 @@
 import "server-only";
 import { runAgent } from "./agent";
 import { AiError, type ChatMessage } from "./ai";
-import { browseCommand, eventLine, MAIN_MENU, type Button } from "./bot-browse";
+import { browseCommand, eventLine, groupItems, MAIN_MENU, moreSessions, type Button } from "./bot-browse";
 import { db } from "./db";
 import { TZ } from "./events";
 import { reminderTime } from "./jobs";
@@ -184,10 +184,12 @@ async function agentReply(platform: Platform, externalId: string, botUserId: str
       data: { dialog: [...history, { role: "assistant", content: result.text }].slice(-T.dialogMemory), messages: { increment: 1 } },
     });
     if (result.askLocation) return { text: result.text, links: [], suggestions: [], askLocation: true };
-    const events = result.events.slice(0, T.botEvents);
+    // Показы одного события — одной строкой с датами остальных
+    const groups = groupItems(result.events).slice(0, T.botEvents);
+    const events = groups.map((g) => g.e);
     // Под каждым событием — почему оно в подборке: «✓ сб, 15 ноября · ✓ от 500 ₽ (≤ 1000 ₽)»
     const list = events
-      .map((e, i) => eventLine(e, i + 1, result.filter?.age != null) + (e.distanceKm != null ? ` · ${e.distanceKm < 1 ? "< 1" : Math.round(e.distanceKm)} км` : "") + (result.why?.[e.id]?.length ? `\n   ${result.why[e.id].join(" · ")}` : ""))
+      .map((e, i) => eventLine(e, i + 1, result.filter?.age != null) + moreSessions(groups[i].more) + (e.distanceKm != null ? ` · ${e.distanceKm < 1 ? "< 1" : Math.round(e.distanceKm)} км` : "") + (result.why?.[e.id]?.length ? `\n   ${result.why[e.id].join(" · ")}` : ""))
       .join("\n\n");
     const notes = [result.degraded ? DEGRADED_NOTE : "", DATA_NOTE].filter(Boolean).join("\n");
     return {

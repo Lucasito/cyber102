@@ -53,6 +53,24 @@ export function SourceForm({ source }: { source?: Source }) {
           <Input name="maxItems" type="number" min={1} max={100} defaultValue={source?.maxItems ?? 20} />
         </Field>
       </div>
+      <fieldset className="space-y-3 rounded-2xl bg-stone-50 p-4">
+        <legend className="px-1 text-sm font-medium">Площадка источника</legend>
+        <p className="text-xs text-stone-500">
+          Если все события источника проходят в одном здании (театр, музей, филармония) — укажите его. Записи без площадки или с похожим названием
+          привязываются к нему, зал сохраняется («Театр „Нур“, Малый зал»). Координаты не обязательны: без них найдутся по адресу.
+        </p>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Название здания">
+            <Input name="venueName" defaultValue={source?.venueName ?? ""} placeholder="Театр «Нур»" />
+          </Field>
+          <Field label="Адрес" hint="Улица и дом; город — из поля выше">
+            <Input name="venueAddress" defaultValue={source?.venueAddress ?? ""} placeholder="ул. Ленина, 5/1" />
+          </Field>
+          <Field label="Координаты" hint="Широта, долгота — например, из Яндекс Карт (необязательно)">
+            <Input name="venueCoords" defaultValue={source?.venueLat != null ? `${source.venueLat}, ${source.venueLon}` : ""} placeholder="54.7230, 55.9446" />
+          </Field>
+        </div>
+      </fieldset>
       <div className="space-y-2">
         <Toggle name="enabled" defaultChecked={source?.enabled ?? false} label="Собирать по расписанию" />
         <Toggle name="autoPublish" defaultChecked={source?.autoPublish ?? false} label="Публиковать прошедшие проверку сразу (не для разбора ИИ)" />

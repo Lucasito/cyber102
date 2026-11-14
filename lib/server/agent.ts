@@ -811,7 +811,9 @@ const plain = (f: EventFilter) => JSON.parse(JSON.stringify(Object.fromEntries(O
 
 /** «Самое дорогое — «A», до 1800 ₽, сб, 20 ноября, Большой зал. Дальше: «B» — 1500 ₽, «C» — 1200 ₽.» */
 function priceExplanation(items: EventItem[], sort: "price_desc" | "price_asc") {
-  const priced = items.filter((e) => e.priceMin != null);
+  // Показы одного события — один раз: «Дальше по цене» не повторяет то же название
+  const seen = new Set<string>();
+  const priced = items.filter((e) => e.priceMin != null && !seen.has(e.title.toLowerCase()) && !!seen.add(e.title.toLowerCase()));
   if (!priced.length) return null;
   const desc = sort === "price_desc";
   const price = (e: EventItem) => (e.priceMin === 0 && !e.priceMax ? "бесплатно" : desc ? `до ${e.priceMax ?? e.priceMin} ₽` : `от ${e.priceMin} ₽`);

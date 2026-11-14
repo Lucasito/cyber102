@@ -10,6 +10,7 @@ import { extractEvent, extractEventList } from "./ai-extract";
 import { fetchText, htmlToText } from "./fetch";
 import { jsonLdEvents } from "./jsonld";
 import { parseFeed } from "./rss";
+import { applySourceVenue, prepareRows } from "./venue";
 
 // Сборщик событий из внешних источников (ТЗ 6.5, уровень 4). Источник даёт строки импорта, дальше — общий
 // импорт: нормализация, регион РБ, дедупликация, проверка ссылки. Доверие зависит от типа:
@@ -170,6 +171,7 @@ export type RunResult = { feedItems: number; report: ImportReport | null; skippe
 export async function previewSource(sourceId: string): Promise<PreviewResult> {
   const source = await db.source.findUniqueOrThrow({ where: { id: sourceId } });
   const { result, calls } = await withAiUsage(() => collect(source, true));
+  result.rows = prepareRows(source, result.rows);
   const tokens = calls.reduce((n, c) => n + c.tokens, 0);
   return { feedItems: result.feedItems, rows: await validateRows(result.rows), skipped: result.skipped, message: result.message, tokens, costRub: await tokensCostRub(tokens) };
 }
@@ -180,6 +182,7 @@ export async function runSource(sourceId: string, userLogin: string | null): Pro
   const kind = source.kind as SourceKind;
   try {
     const { result: got, calls } = await withAiUsage(() => collect(source, false));
+    got.rows = prepareRows(source, got.rows);
     const tokens = calls.reduce((n, c) => n + c.tokens, 0);
     const costRub = await tokensCostRub(tokens);
     const review =
@@ -221,6 +224,8 @@ export async function runSource(sourceId: string, userLogin: string | null): Pro
         });
       }
     }
+    // Площадка источника: новые площадки-залы получают адрес и точные координаты
+    await applySourceVenue(source).catch(() => 0);
     const parts = report
       ? [`добавлено ${report.created}`, `обновлено ${report.updated}`, `без изменений ${report.unchanged}`, `отклонено ${report.rejected}`]
       : ["событий не найдено"];

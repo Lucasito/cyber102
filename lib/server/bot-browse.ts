@@ -111,6 +111,34 @@ const toFilter = (b: Browse, limit: number, offset = 0) =>
     offset,
   });
 
+/**
+ * Показы одного события (то же название и площадка) — одной строкой, как карточка на сайте (groupSessions).
+ * Многодневные и отменённые не сводим. Порядок — по первому показу.
+ */
+export function groupItems(items: EventItem[]): { e: EventItem; more: EventItem[] }[] {
+  const out: { e: EventItem; more: EventItem[] }[] = [];
+  const byKey = new Map<string, { e: EventItem; more: EventItem[] }>();
+  for (const e of items) {
+    const multi = e.endsAt && e.endsAt.getTime() - e.startsAt.getTime() > 86_400_000;
+    const key = multi || e.status === "CANCELLED" || !e.venue ? null : `${e.title.toLowerCase().replace(/ё/g, "е").trim()}|${e.venue.name}`;
+    const g = key ? byKey.get(key) : undefined;
+    if (g) g.more.push(e);
+    else {
+      const ng = { e, more: [] as EventItem[] };
+      out.push(ng);
+      if (key) byKey.set(key, ng);
+    }
+  }
+  return out;
+}
+
+/** «ещё показы: 19 нояб. 19:00, 20 нояб. 19:00 и ещё 2» — под строкой сведённого события. */
+export function moreSessions(more: EventItem[]) {
+  if (!more.length) return "";
+  const shown = more.slice(0, 3).map((m) => m.startsAt.toLocaleString("ru-RU", { timeZone: TZ, day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" }));
+  return `\n   ещё показы: ${shown.join(", ")}${more.length > 3 ? ` и ещё ${more.length - 3}` : ""}`;
+}
+
 /** Строка события в списке: название, когда, где, цена, возраст. */
 export function eventLine(e: EventItem, i: number, ageNote = false) {
   const status = e.status === "RESCHEDULED" ? " (перенесено)" : e.status === "SOLD_OUT" ? " (билетов нет)" : "";
@@ -167,11 +195,12 @@ async function list(botUserId: string, b: Browse): Promise<BrowseReply> {
     };
   }
   const shown = offset + items.length;
-  const lines = items.map((e, i) => eventLine(e, offset + i + 1));
+  const groups = groupItems(items);
+  const lines = groups.map(({ e, more }, i) => eventLine(e, offset + i + 1) + moreSessions(more));
   return {
     text: `${title[0].toUpperCase()}${title.slice(1)} — найдено ${total}:\n\n${lines.join("\n\n")}\n\nОткройте событие кнопкой — покажу всё: адрес, цену, источник и билеты.`,
     buttons: [
-      ...items.map((e, i) => [{ label: `${offset + i + 1}. ${e.title}`.slice(0, 60), command: `/e ${e.id}` }]),
+      ...groups.map(({ e }, i) => [{ label: `${offset + i + 1}. ${e.title}`.slice(0, 60), command: `/e ${e.id}` }]),
       ...(shown < total ? [[{ label: `Показать ещё (${shown} из ${total})`, command: "/more" }]] : []),
       ...FILTER_ROWS,
     ],
