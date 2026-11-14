@@ -8,7 +8,7 @@ import { queueDataChange } from "./data-changes";
 import { importVenueLocation, resolveVenue } from "./venue-registry";
 import { settlementInBashkortostan } from "./geocode";
 import { getSettings } from "./settings";
-import { categorySlug, dedupKey, inBashkortostan, normalizeCity, normalizeTitle, parseAge, parseBool, parseDate, parseDuration, parsePrice, parseTags, parseUrl, RB_SETTLEMENTS } from "./normalize";
+import { categorySlug, dedupKey, genreTagsFromUrl, inBashkortostan, normalizeCity, normalizeTitle, parseAge, parseBool, parseDate, parseDuration, parsePrice, parseTags, parseUrl, RB_SETTLEMENTS } from "./normalize";
 
 // Импорт событий из CSV/JSON (ТЗ 6.1): валидация, нормализация, дедупликация, идемпотентность, отчёт.
 //  • Сырые строки — в RawRecord (отдельно от событий): повторная загрузка той же строки ничего не меняет.
@@ -214,7 +214,7 @@ function normalizeRow(r: Record<string, unknown>, ctx: { cities: string[]; categ
     priceMax,
     ageLimit: parseAge(r.ageLimit),
     categorySlug: cat,
-    tags: parseTags(r.tags),
+    tags: [...new Set([...parseTags(r.tags), ...genreTagsFromUrl(sourceUrl)])],
     language: typeof r.language === "string" ? r.language.toLowerCase().slice(0, 40) : null,
     orgUrl: parseUrl(r.orgUrl),
     ticketUrl: parseUrl(r.ticketUrl),

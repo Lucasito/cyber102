@@ -3,6 +3,7 @@
 import "dotenv/config";
 import assert from "node:assert/strict";
 import { categorizeChange, categorizeImportError, checkCard, priceOnPage } from "../lib/server/afisha-accuracy.ts";
+import { genreTagsFromUrl } from "../lib/server/normalize.ts";
 
 let failed = 0;
 const check = (name: string, fn: () => void) => {
@@ -48,6 +49,14 @@ check("категории ошибок импорта и конфликтов", 
   assert.equal(categorizeChange({ startsAt: "2026-11-20" }), "изменение даты");
   assert.equal(categorizeChange({ address: "ул. Ленина, 1" }), "место: адрес, город, площадка");
   assert.equal(categorizeChange({ priceMin: 500 }), "конфликт сведений (цена, возраст, описание)");
+});
+
+check("поджанр из адреса официальной страницы театра", () => {
+  assert.deepEqual(genreTagsFromUrl("https://bashopera.ru/repertoire/ballet/278/"), ["балет"]);
+  assert.deepEqual(genreTagsFromUrl("https://bashopera.ru/repertoire/opera/15866/"), ["опера"]);
+  assert.deepEqual(genreTagsFromUrl("https://bashopera.ru/repertoire/operetta/12/"), ["оперетта"]);
+  assert.deepEqual(genreTagsFromUrl("https://example.org/news/opera-house-renovation"), []);
+  assert.deepEqual(genreTagsFromUrl(null), []);
 });
 
 console.log(failed ? `Не прошло: ${failed}` : "Все проверки прошли");

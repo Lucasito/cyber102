@@ -205,6 +205,24 @@ export function parseTags(input: unknown): string[] {
   return [...new Set(list.map((t) => String(t).trim().toLowerCase()).filter((t) => t && t.length <= 40))].slice(0, 20);
 }
 
+/**
+ * Поджанр из адреса официальной страницы: сайты театров раскладывают репертуар по разделам
+ * (bashopera.ru/repertoire/ballet/278/ — балет, …/opera/… — опера). Это сведения источника, а не догадка:
+ * у таких событий часто нет ни описания, ни меток, и без этого «балет» не отличить от оперы.
+ */
+const URL_GENRES: [RegExp, string][] = [
+  [/\/(ballet|balet)\//i, "балет"],
+  [/\/(opera)\//i, "опера"],
+  [/\/(operetta|operetta-musical|opereta)\//i, "оперетта"],
+  [/\/(musical|myuzikl|mjuzikl)\//i, "мюзикл"],
+];
+export function genreTagsFromUrl(url: string | null | undefined): string[] {
+  if (!url) return [];
+  let path = "";
+  try { path = new URL(url).pathname; } catch { return []; }
+  return URL_GENRES.filter(([re]) => re.test(path)).map(([, tag]) => tag);
+}
+
 export function parseUrl(input: unknown): string | null {
   if (typeof input !== "string" || !input.trim()) return null;
   try {
