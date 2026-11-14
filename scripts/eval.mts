@@ -48,7 +48,14 @@ type DbEvent = Awaited<ReturnType<typeof loadActual>>[number];
 const args = process.argv.slice(2);
 const only = args.includes("--only") ? new Set(args[args.indexOf("--only") + 1].split(",")) : null;
 const { cases: allCases } = JSON.parse(readFileSync("eval/queries.json", "utf8")) as { cases: Case[] };
-const cases = allCases.filter((c) => !only || only.has(c.id));
+// Подстановки {cancelled}, {rescheduled}, {scheduled}, {injected} — реальные события временной базы, которым
+// scripts/eval-run.mts поставил сценарные пометки (отмена, перенос, инъекция в описании). Выдуманных событий нет.
+const scenario = JSON.parse(process.env.EVAL_SCENARIO ?? "{}") as Record<string, string>;
+const fill = (text: string) => text.replace(/\{(cancelled|rescheduled|scheduled|injected)\}/g, (m, k: string) => {
+  if (!scenario[k]) throw new Error(`Нет события для «${m}»: запускайте npm run eval — он готовит временную базу со снимком реальной афиши`);
+  return scenario[k];
+});
+const cases = allCases.filter((c) => !only || only.has(c.id)).map((c) => ({ ...c, dialog: c.dialog.map(fill) }));
 
 // ───────── Даты ─────────
 
@@ -130,7 +137,7 @@ const constraintCount = (c?: Constraints) => (c ? Object.keys(c).length : 0);
 
 const MONTHS = ["января", "февраля", "марта", "апреля", "мая", "июня", "июля", "августа", "сентября", "октября", "ноября", "декабря"];
 
-type FactEvent = Pick<EventItem, "title" | "priceMin" | "priceMax" | "startsAt" | "endsAt"> & { venue: { name: string } | null };
+type FactEvent = Pick<EventItem, "title" | "priceMin" | "priceMax" | "startsAt" | "endsAt"> & { venue: { name: string } | null; originalStartsAt?: Date | null };
 
 /**
  * Утверждения в тексте (названия в кавычках, цены, время, даты) и сколько из них подтверждено событиями ответа.
@@ -168,7 +175,9 @@ function factCheck(text: string, events: FactEvent[], userText: string) {
       ok: events.some((e) => {
         const [y] = localDay(0, e.startsAt).split("-").map(Number);
         const d = `${y}-${String(month + 1).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
-        return dayStart(d) <= (e.endsAt ?? e.startsAt) && dayEnd(d) >= e.startsAt;
+        // Прежняя дата перенесённого события («перенесён с 15 ноября») — тоже факт из записи базы
+        const was = e.originalStartsAt ? new Date(e.originalStartsAt) : null;
+        return (dayStart(d) <= (e.endsAt ?? e.startsAt) && dayEnd(d) >= e.startsAt) || (!!was && dayStart(d) <= was && dayEnd(d) >= was);
       }),
     });
   }

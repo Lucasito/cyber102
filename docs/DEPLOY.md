@@ -99,7 +99,6 @@ docker compose -f docker-compose.prod.yml run --rm --no-deps --entrypoint sh afi
 
 ```bash
 docker logs -f afisha-app                                    # логи
-docker exec afisha-app npx tsx scripts/seed-demo.mts --allow-remote --clear  # удалить тестовые события (на сервере их быть не должно)
 docker exec afisha-app npx tsx --conditions=react-server scripts/sources-run.mts --allow-remote  # собрать включённые источники сейчас
 docker exec afisha-app npx tsx scripts/seed-sources.mts --allow-remote       # начальный список источников (выключены)
 docker exec afisha-app npx tsx scripts/seed-sources.mts --allow-remote --enable-cinemas  # + включить 12 кинотеатров с автопубликацией

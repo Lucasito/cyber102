@@ -131,7 +131,7 @@ export async function measureAfishaAccuracy({ sample = 50, days = 7 } = {}): Pro
 
   // Метрика 10: сверка с источником
   const candidates = published.flatMap((e) => {
-    const s = e.sources.find((x) => x.source !== "demo" && /^https?:\/\//.test(x.url));
+    const s = e.sources.find((x) => /^https?:\/\//.test(x.url));
     return s ? [{ e, source: s.source, url: s.url }] : [];
   });
   const pages = new Map<string, Promise<string>>();

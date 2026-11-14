@@ -15,5 +15,6 @@
 - Админка: каждое server action начинается с `await requireAdmin()`.
 - Сервер общий с продакшном РемЗап (`/opt/remzap`): не трогать его контейнеры, не открывать новые порты,
   не делать `docker system prune`. Деплой — `bash scripts/deploy.sh`.
-- Тестовые события — источник `demo` (`lib/demo-data.ts`).
+- Выдуманных событий нет и в тестовых данных: тестовые данные — снимок реальной афиши (`lib/real-data.ts`,
+  `data/real-events.json`, `npm run seed:real`); `npm run eval` — на нём во временной базе.
 - Перед коммитом: `npm run typecheck && npm run lint`.

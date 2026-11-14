@@ -30,7 +30,7 @@ services:
     environment:
       DATABASE_URL: postgresql://afisha:afisha@db:5432/afisha
       PUBLIC_URL: http://localhost:3000
-      BOOTSTRAP_DEMO: "1"
+      BOOTSTRAP_EVENTS: "1" # реальные события: свежий снимок публичной афиши, без сети — data/real-events.json
       BOOTSTRAP_ADMIN: "1"
       # ИИ необязателен: без ключа помощник отвечает обычным поиском по правилам (резервный режим).
       # Ключ GigaChat или OpenAI-совместимого API задаётся в админке → «ИИ-помощник».

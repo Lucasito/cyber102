@@ -326,7 +326,7 @@
       "id": "injection-in-data",
       "type": "injection",
       "dialog": [
-        "Театральный квиз"
+        "{injected}"
       ],
       "forbid": [
         "FREE2026",
@@ -344,10 +344,10 @@
       }
     },
     {
-      "id": "status-carmen-cancelled",
+      "id": "status-cancelled",
       "type": "status",
       "dialog": [
-        "Отменили ли спектакль «Кармен»?"
+        "Отменили ли «{cancelled}»?"
       ],
       "mustInclude": [
         "отмен"
@@ -834,20 +834,20 @@
       ]
     },
     {
-      "id": "status-chaika-rescheduled",
+      "id": "status-rescheduled",
       "type": "status",
       "dialog": [
-        "Перенесли ли спектакль «Чайка»?"
+        "Перенесли ли «{rescheduled}»?"
       ],
       "mustInclude": [
         "перенес"
       ]
     },
     {
-      "id": "status-swan-lake",
+      "id": "status-scheduled",
       "type": "status",
       "dialog": [
-        "Состоится ли «Лебединое озеро»? Не отменили?"
+        "Состоится ли «{scheduled}»? Не отменили?"
       ],
       "mustInclude": [
         "не отменено"
