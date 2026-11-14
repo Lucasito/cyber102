@@ -181,6 +181,16 @@ try {
     await runSource(details.id, "test");
     assert.equal(await db.dataChange.count({ where: { source: details.code } }), 6);
   });
+  await check("сеансы одного фильма в двух кинотеатрах сети не склеиваются и не считаются дублями", async () => {
+    await db.category.upsert({ where: { slug: "cinema" }, create: { slug: "cinema", name: "Кино" }, update: {} });
+    const film = { title: "Проверочный фильм", city: "Уфа", price: 300, category: "cinema", sourceUrl: `${url}/kino` };
+    const a = await importRows([{ ...film, dateStart: first.toISOString(), venue: "Синема Парк, ТРК «Семья»", externalId: "a:1" }], { fileName: "test", source: "kino-a", userLogin: "test" });
+    const b = await importRows([{ ...film, dateStart: new Date(first.getTime() + 10 * 60_000).toISOString(), venue: "Синема Парк, ТРЦ «Галерея Арт»", externalId: "b:1" }], { fileName: "test", source: "kino-b", userLogin: "test" });
+    assert.equal(a.created + b.created, 2);
+    const events = await db.event.findMany({ where: { title: film.title } });
+    assert.equal(events.length, 2);
+    assert.ok(events.every((e) => !/дубль/.test(e.reviewNote ?? "")), events.map((e) => e.reviewNote).join(" / "));
+  });
   await check("один внешний идентификатор на странице не склеивает разные сеансы", async () => {
     const row = { title: "Несколько сеансов", dateStart: first.toISOString(), city: "Салават", venue: protectedVenue.name, price: 100, category: "concert", sourceUrl: `${url}/sessions`, externalId: "shared-id" };
     const rows = [row, { ...row, dateStart: new Date(first.getTime() + 4 * 3_600_000).toISOString() }];

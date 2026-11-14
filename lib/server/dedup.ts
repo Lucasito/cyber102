@@ -115,7 +115,8 @@ export async function findDuplicate(
 /** Возможные дубли среди актуальных событий — для модерации (пары, сначала самые похожие). */
 export async function scanDuplicates(limit = 50) {
   const events = await db.event.findMany({
-    where: { status: { notIn: ["PAST"] }, OR: [{ startsAt: { gte: new Date() } }, { endsAt: { gte: new Date() } }] },
+    // Кино не сравниваем: один фильм в одно время в разных кинотеатрах — разные сеансы (см. importRows)
+    where: { status: { notIn: ["PAST"] }, OR: [{ startsAt: { gte: new Date() } }, { endsAt: { gte: new Date() } }], NOT: { category: { is: { slug: "cinema" } } } },
     select: {
       id: true,
       title: true,

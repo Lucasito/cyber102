@@ -372,7 +372,9 @@ export async function importRows(rows: Record<string, unknown>[], opts: ImportOp
           ? await tx.event.findUnique({ where: { id: bySource.eventId } })
           : await tx.event.findFirst({ where: { OR: [{ dedupKey: canonicalKey }, { normalizedTitle: n.normalizedTitle, venueId: venue.id, startsAt: n.startsAt }] } });
         // Нечёткий поиск дубля из другого источника: «Спектакль «X»» и «X / перевод», площадка названа по-разному
-        const fuzzy = existing ? null : await findDuplicate(tx, { title: n.title, startsAt: n.startsAt, endsAt: n.endsAt, city: n.city, venue: n.venue });
+        // Кроме кино: один фильм в одно время идёт во многих кинотеатрах (и у сетей общее слово в названии площадки —
+        // «Синема Парк», «Ultra Cinema»), а сеансы одного кинотеатра различает externalId источника
+        const fuzzy = existing || n.categorySlug === "cinema" ? null : await findDuplicate(tx, { title: n.title, startsAt: n.startsAt, endsAt: n.endsAt, city: n.city, venue: n.venue });
         if (fuzzy?.level === "same") existing = await tx.event.findUnique({ where: { id: fuzzy.id } });
         else if (fuzzy) {
           n.issues.push(`возможный дубль «${fuzzy.title}» (${fuzzy.venueName ?? "площадка не указана"})`);
