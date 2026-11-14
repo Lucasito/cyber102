@@ -106,6 +106,8 @@ const PHRASES = {
     venueNone: "Такой площадки в афише нет или на ней пока нет событий.",
     cancelled: "Хорошо, ничего не меняю.",
     confirmButtons: ["Подтвердить", "Отмена"],
+    offtopic: "С этим не помогу — я подбираю только события из афиши культуры Башкортостана.",
+    why: { otherDates: "не в выбранные даты", otherCity: "другой город", otherGenre: "другой жанр", free: "бесплатно", ageUnknown: "возраст не указан", pushkin: "Пушкинская карта", wheelchair: "доступно на коляске", hearing: "для слабослышащих", vision: "для слабовидящих", period: "идёт в эти дни" },
     reply: "Обращайся на «вы».",
   },
   ba: {
@@ -124,6 +126,8 @@ const PHRASES = {
     venueNone: "Афишала бындай майҙансыҡ юҡ йәки унда әлегә саралар юҡ.",
     cancelled: "Яҡшы, бер нәмә лә үҙгәртмәйем.",
     confirmButtons: ["Подтвердить", "Отмена"],
+    offtopic: "Был яғынан ярҙам итә алмайым — мин Башҡортостан мәҙәниәте афишаһынан саралар ғына һайлайым.",
+    why: { otherDates: "һайланған көндәрҙә түгел", otherCity: "башҡа ҡала", otherGenre: "башҡа жанр", free: "түләүһеҙ", ageUnknown: "йәше күрһәтелмәгән", pushkin: "Пушкин картаһы", wheelchair: "коляскала барырға мөмкин", hearing: "ишетеүе насарҙар өсөн", vision: "күреүе насарҙар өсөн", period: "был көндәрҙә бара" },
     reply: "Яуапты башҡорт телендә яҙ, «һеҙ» тип мөрәжәғәт ит. Сараларҙың исемдәрен һәм урындарын үҙгәртмә.",
   },
 } as const;
@@ -181,6 +185,8 @@ export type AgentReply = {
   suggestions: string[];
   clarify?: boolean;
   relaxed?: boolean; // точных совпадений не было — фильтр ослаблен
+  /** Почему событие в подборке: по каждому id — «✓ сб, 15 ноября», «✓ от 500 ₽ (≤ 1000 ₽)», «✗ другой город». Формирует код. */
+  why?: Record<string, string[]>;
   degraded?: boolean; // часть ответа без ИИ (перегрузка, сбой или лимит стоимости)
   traceId?: string; // трасса ответа в админке: /admin/traces/{traceId}
 };
@@ -358,8 +364,10 @@ async function agentCore(
   // Реплика не про события («привет», «скучно») — модель просит уточнить, а правила ничего не нашли:
   // представляемся и задаём вопрос, а не ищем по догадкам модели
   if (intent.clarify && !specificByCode) {
-    steps.push({ step: "clarify", reason: "реплика не про события" });
-    return { text: `${P.hello} ${clarifyText}`, events: [], suggestions: clarifySuggestions, clarify: true };
+    // Явно посторонний вопрос (погода, код, рецепт) — коротко, что это не к нам, и сразу к задаче
+    const off = OFFTOPIC_RE.test(last.toLowerCase().replace(/ё/g, "е"));
+    steps.push({ step: "clarify", reason: off ? "вне темы" : "реплика не про события" });
+    return { text: `${off ? P.offtopic : P.hello} ${clarifyText}`, events: [], suggestions: clarifySuggestions, clarify: true };
   }
   const lastAssistant = history.filter((m) => m.role === "assistant").at(-1)?.content ?? "";
   const justClarified = [PHRASES.ru.clarify, PHRASES.ba.clarify, clarifyText].some((c) => lastAssistant.includes(c.slice(0, 40)));
@@ -422,11 +430,14 @@ async function agentCore(
   // С возрастом зрителя события без возрастной пометки — в конце: возраст неизвестен, уточнить у организатора
   if (current.age != null) items = [...items.filter((e) => e.ageLimit != null), ...items.filter((e) => e.ageLimit == null)];
 
+  // Почему событие в подборке — по запрошенным условиям (до ослабления), чтобы несовпадение было видно честно
+  const why = Object.fromEntries(items.map((e) => [e.id, matchReasons(e, filter, P.why)]));
   const list = items
     .map(
       (e, i) =>
         `${i + 1}. ${safe(e.title)} — ${when(e)} — ${safe(e.venue?.name, 80)}, ${safe(e.venue?.city, 40)} — ` +
-        `${e.priceMin === 0 ? "бесплатно" : e.priceMin != null ? `от ${e.priceMin} ₽` : "цена не указана"} — ${e.ageLimit != null ? `${e.ageLimit}+` : "возраст не указан"}`,
+        `${e.priceMin === 0 ? "бесплатно" : e.priceMin != null ? `от ${e.priceMin} ₽` : "цена не указана"} — ${e.ageLimit != null ? `${e.ageLimit}+` : "возраст не указан"}` +
+        (why[e.id].length ? ` — условия: ${why[e.id].join(", ")}` : ""),
     )
     .join("\n");
   const extra = (await getSettings("ai")).extraPrompt;
@@ -443,6 +454,7 @@ async function agentCore(
           `${P.reply} Слово «сегодня» — только для событий, которые проходят сегодня; «завтра» — только для завтрашних. ` +
           "Начинай сразу с совета, например: «Сегодня в 17:00 — лекция „Как смотреть балет“ в Театре оперы и балета». " +
           "Не пиши служебных фраз: «подборка подходит», «соответствует запросу», «включает события», «так как». Не пересказывай весь список — он показан карточками. " +
+          "У событий указано, какие условия запроса выполнены (✓) и какие нет (✗): опирайся на это, не утверждай совпадение там, где стоит ✗. " +
           "Говори только о событиях из списка, ничего не добавляй от себя: ни событий, ни цен, ни дат. Цена «от N ₽» — минимальная, не утверждай, что всё укладывается в бюджет, если это не так. " +
           (note ? "Точного совпадения нет: даты или жанр событий отличаются от запрошенных — не делай вид, что они совпадают. " : "") + "Дни недели и даты называй только так, как они указаны в списке. " +
           "Событие с пометкой «возраст не указан» не называй детским или подходящим по возрасту; если советуешь его, скажи, что возраст стоит уточнить у организатора. " +
@@ -487,6 +499,7 @@ async function agentCore(
     filter: current,
     suggestions: askAge ? AGE_SUGGESTIONS : followupSuggestions,
     relaxed: relaxed.length > 0,
+    why,
     degraded,
   };
 }
@@ -502,6 +515,9 @@ const CANCEL = /^(нет|отмена|отменить|не надо|не нуж
 const SUBSCRIBE_RE = /подпиш|подписк|присылай|уведомл|сообща\S* о новых|получать (новые|о новых)/;
 const FEEDBACK_RE = /передай\S* организатор|передай\S* модератор|сообщи\S* об ошибке|ошибк\S* в (карточке|афише|описании|событии)|пожалова|(неверн|неправильн)\S* (цен|врем|дат|адрес)/;
 const SCHEDULE_RE = /расписани|что (идет|будет|проходит|покажут|дают) (в|на) /;
+/** Явно посторонние темы: на них — короткий отказ и возврат к афише. */
+const OFFTOPIC_RE =
+  /погод|курс (доллар|евро|валют)|напиши (код|программ|сочинени|стих)|рецепт|анекдот|шутк|политик|выбор(ы|ах)|переведи|реши (задач|пример)|сколько будет|кто (ты|тебя создал)|ты кто|гороскоп|новости/;
 const SIMILAR_TITLE_RE = /похож\S* на [«"„“]?([^»"“”?]{2,80})/;
 
 const PLAN_RE = /(составь|сделай|спланируй|распиши|подбери|набросай)\s+(мне\s+|нам\s+)?(план|программ|маршрут)|план на|программ\S* на (день|выходн|суббот|воскрес|сегодня|завтра)|спланир/;
@@ -746,6 +762,29 @@ function templateExplanation(items: EventItem[], f: EventFilter) {
     `Ближайшее — «${first.title}», ${when(first).replace(", можно прийти в любой день этого периода", "")}` +
     `${first.venue ? `, ${first.venue.name}` : ""}.`
   );
+}
+
+/**
+ * Почему событие в подборке — по условиям запроса: «✓» выполнено, «✗» условие пришлось снять при ослаблении,
+ * «?» не известно (возраст не указан). Рекомендацию обосновывает код, модель только связывает текст.
+ */
+export function matchReasons(e: EventItem, f: EventFilter, L: Record<keyof (typeof PHRASES)["ru"]["why"], string>): string[] {
+  const out: string[] = [];
+  const end = e.endsAt ?? e.startsAt;
+  if (f.dateFrom || f.dateTo) {
+    const inRange = (!f.dateTo || e.startsAt <= f.dateTo) && (!f.dateFrom || end >= f.dateFrom);
+    const multi = end.getTime() - e.startsAt.getTime() > 86_400_000;
+    const day = e.startsAt.toLocaleDateString("ru-RU", { timeZone: TZ, weekday: "short", day: "numeric", month: "long" });
+    out.push(inRange ? `✓ ${multi ? L.period : day}` : `✗ ${L.otherDates}`);
+  }
+  if (f.city && e.venue) out.push(e.venue.city.toLowerCase() === f.city.toLowerCase() ? `✓ ${e.venue.city}` : `✗ ${L.otherCity} (${e.venue.city})`);
+  if (f.category) out.push(e.category?.slug === f.category ? `✓ ${e.category.name.toLowerCase()}` : `✗ ${L.otherGenre}`);
+  if (f.free) out.push(e.priceMin === 0 ? `✓ ${L.free}` : `✗ ${e.priceMin != null ? `от ${e.priceMin} ₽` : L.free}`);
+  else if (f.priceMax != null && e.priceMin != null) out.push(`${e.priceMin <= f.priceMax ? "✓" : "✗"} ${e.priceMin === 0 ? L.free : `от ${e.priceMin} ₽`} (≤ ${f.priceMax} ₽)`);
+  if (f.age != null) out.push(e.ageLimit == null ? `? ${L.ageUnknown}` : `${e.ageLimit <= f.age ? "✓" : "✗"} ${e.ageLimit}+`);
+  if (f.pushkin) out.push(`${e.pushkinCard ? "✓" : "✗"} ${L.pushkin}`);
+  if (f.access) out.push(`${e.accessibility.includes(f.access) ? "✓" : "✗"} ${L[f.access]}`);
+  return out;
 }
 
 /** Когда проходит событие — словами для модели. Многодневные (выставки) — «идёт с … по …, можно прийти в любой день». */

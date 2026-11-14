@@ -160,7 +160,10 @@ export async function botAnswer(platform: Platform, externalId: string, rawText:
       data: { dialog: [...history, { role: "assistant", content: result.text }].slice(-T.dialogMemory), messages: { increment: 1 } },
     });
     const events = result.events.slice(0, T.botEvents);
-    const list = events.map((e, i) => eventLine(e, i + 1, result.filter?.age != null)).join("\n\n");
+    // Под каждым событием — почему оно в подборке: «✓ сб, 15 ноября · ✓ от 500 ₽ (≤ 1000 ₽)»
+    const list = events
+      .map((e, i) => eventLine(e, i + 1, result.filter?.age != null) + (result.why?.[e.id]?.length ? `\n   ${result.why[e.id].join(" · ")}` : ""))
+      .join("\n\n");
     const notes = [result.degraded ? DEGRADED_NOTE : "", DATA_NOTE].filter(Boolean).join("\n");
     return {
       text: list ? `${result.text}\n\n${list}\n\n${notes}` : result.text,

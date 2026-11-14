@@ -178,7 +178,7 @@ export function GET(request: Request) {
           responses: {
             "200": {
               description:
-                "{ text, events, filter?, suggestions, clarify?, relaxed?, degraded?, traceId? } — уточняющий вопрос или подборка с объяснением. degraded: true — ИИ недоступен или исчерпан лимит стоимости, ответ собран обычным поиском (резервный режим). traceId — трасса ответа для разбора в админке",
+                "{ text, events, filter?, suggestions, clarify?, relaxed?, why?, degraded?, traceId? } — уточняющий вопрос или подборка с объяснением. why — по id события список условий запроса: «✓ …» выполнено, «✗ …» снято при ослаблении, «? …» неизвестно. degraded: true — ИИ недоступен или исчерпан лимит стоимости, ответ собран обычным поиском (резервный режим). traceId — трасса ответа для разбора в админке",
             },
             "400": err("Неверное тело запроса", { code: "bad_request", message: "Неверное тело запроса: нужен { messages: [{ role, content }] }" }),
             "429": err("Слишком много запросов (заголовок Retry-After)", {
