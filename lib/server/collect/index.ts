@@ -177,7 +177,9 @@ async function collect(source: Source, dryRun: boolean, pages: PageCache = new M
 
 /** Изменение детальной страницы может не отражаться в списке афиши. Проверяем до пяти старейших страниц за сбор. */
 async function recheckPages(source: Source, got: Collected, pages: PageCache) {
-  if (source.kind === "rss_ai") return;
+  // Свой парсер (кинотеатры) каждый раз перечитывает всё расписание — перепроверять отдельные страницы, да ещё
+  // разбором ИИ, незачем: это тратило токены и добавляло сеансы мимо парсера
+  if (source.kind === "rss_ai" || source.kind === "custom") return;
   const links = await db.eventSource.findMany({ where: { source: source.code, event: { status: { not: "PAST" },
     OR: [{ startsAt: { gte: new Date() } }, { endsAt: { gte: new Date() } }] } }, orderBy: { fetchedAt: "asc" }, include: { event: { select: { title: true, startsAt: true } } } });
   const urls = [...new Set(links.map((s) => s.url))].filter((u) => u !== source.url && !got.rows.some((r) => r.sourceUrl === u));
