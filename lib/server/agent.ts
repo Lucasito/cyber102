@@ -444,10 +444,14 @@ async function agentCore(
     // площадки тянет в подборку весь его репертуар
     const sub = current.q ? SUBGENRES.find((g) => g.test(current.q!.toLowerCase())) : undefined;
     const search = async (f: EventFilter, extra: Record<string, unknown>) => {
-      const r = await call("search_events", toArgs(f), extra, { exclude });
+      // Для поджанра берём выдачу шире: подходящие могут быть не на первой странице
+      const r = await call("search_events", sub && f.q ? { ...toArgs(f), limit: 60 } : toArgs(f), extra, { exclude });
       if (!r.ok) throw new Error(r.error);
       const found = r.items ?? [];
-      return sub && f.q ? found.filter((e) => sub.test(`${e.title} ${e.description ?? ""}`.toLowerCase())) : found;
+      if (!sub || !f.q) return found;
+      const own = found.filter((e) => sub.test(`${e.title} ${e.description ?? ""} ${e.tags.join(" ")}`.toLowerCase()));
+      // У событий без описания и меток («Лебединое озеро») поджанр не виден — тогда, как раньше, совпадение по площадке
+      return (own.length ? own : found).slice(0, f.limit);
     };
     items = await search(current, { by: tool.by });
     for (const key of relaxSteps) {
